@@ -6,6 +6,7 @@ import { ListControls } from "@/components/dashboard/list-controls";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import { serverApiFetch } from "@/lib/server-api";
+import { requireDashboardUser } from "@/lib/dashboard-guard";
 import type { ApiList, ApiTenant, LeaseRow } from "@/lib/dashboard-types";
 import { formatDate, initials } from "@/lib/dashboard-utils";
 
@@ -23,6 +24,7 @@ export default async function TenantsPage({ searchParams }: { searchParams: Prom
   const q = params.q ?? "";
   const page = Number(params.page ?? "1") || 1;
   const limit = 20;
+  await requireDashboardUser();
   const [tenants, leases] = await Promise.all([
     serverApiFetch<ApiList<ApiTenant>>(`/api/tenants?limit=${limit}&page=${page}${q ? `&q=${encodeURIComponent(q)}` : ""}`),
     serverApiFetch<ApiList<LeaseRow>>("/api/leases?limit=100"),

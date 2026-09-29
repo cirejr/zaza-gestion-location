@@ -4,6 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { RoleSelect } from "@/components/dashboard/role-select";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import { PageHeader } from "@/components/dashboard/page-header";
+import { requireDashboardUser } from "@/lib/dashboard-guard";
 import { serverApiFetch } from "@/lib/server-api";
 import type { ApiList, ApiUser } from "@/lib/dashboard-types";
 import { initials } from "@/lib/dashboard-utils";
@@ -11,6 +12,7 @@ import { initials } from "@/lib/dashboard-utils";
 export const dynamic = "force-dynamic";
 
 export default async function TeamPage() {
+  await requireDashboardUser();
   let users: ApiUser[] = [];
   let forbidden = false;
   try {

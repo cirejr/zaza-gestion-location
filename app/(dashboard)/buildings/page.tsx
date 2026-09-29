@@ -11,6 +11,7 @@ import { ListControls } from "@/components/dashboard/list-controls";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import { serverApiFetch } from "@/lib/server-api";
+import { requireDashboardUser } from "@/lib/dashboard-guard";
 import type { ApiApartment, ApiBuilding, ApiList } from "@/lib/dashboard-types";
 import { formatCfa } from "@/lib/dashboard-utils";
 
@@ -21,6 +22,7 @@ export default async function BuildingsPage({ searchParams }: { searchParams: Pr
   const q = params.q ?? "";
   const page = Number(params.page ?? "1") || 1;
   const limit = Number(params.limit ?? "12") || 12;
+  await requireDashboardUser();
   const response = await serverApiFetch<ApiList<ApiBuilding>>(`/api/buildings?limit=${limit}&page=${page}${q ? `&q=${encodeURIComponent(q)}` : ""}`);
   const total = response.pagination?.total ?? response.data.length;
   const apartmentGroups = await Promise.all(response.data.map(async (building) => {

@@ -9,6 +9,7 @@ import { CreateApartmentDialog } from "@/components/dashboard/create-apartment-d
 import { PageHeader } from "@/components/dashboard/page-header";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import { serverApiFetch } from "@/lib/server-api";
+import { requireDashboardUser } from "@/lib/dashboard-guard";
 import type { ApiApartment, ApiBuilding, ApiList } from "@/lib/dashboard-types";
 import { formatCfa } from "@/lib/dashboard-utils";
 
@@ -19,6 +20,7 @@ export default async function BuildingDetailPage({ params, searchParams }: { par
   const q = queryParams.q ?? "";
   const page = Number(queryParams.page ?? "1") || 1;
   const limit = 20;
+  await requireDashboardUser();
 
   let building: ApiBuilding;
   try {

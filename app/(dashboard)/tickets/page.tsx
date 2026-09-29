@@ -6,12 +6,14 @@ import { PageHeader } from "@/components/dashboard/page-header";
 import { RowAction } from "@/components/dashboard/row-action";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import { serverApiFetch } from "@/lib/server-api";
+import { requireDashboardUser } from "@/lib/dashboard-guard";
 import type { ApiBuilding, ApiList, TicketRow } from "@/lib/dashboard-types";
 import { formatDate } from "@/lib/dashboard-utils";
 
 export const dynamic = "force-dynamic";
 
 export default async function TicketsPage() {
+  await requireDashboardUser();
   const [response, buildings] = await Promise.all([
     serverApiFetch<ApiList<TicketRow>>("/api/tickets?limit=100"),
     serverApiFetch<ApiList<ApiBuilding>>("/api/buildings?limit=100"),

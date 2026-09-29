@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/dashboard/page-header";
 import { RowAction } from "@/components/dashboard/row-action";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import { serverApiFetch } from "@/lib/server-api";
+import { requireDashboardUser } from "@/lib/dashboard-guard";
 import type { ApiList, LeaseRow, PaymentRow } from "@/lib/dashboard-types";
 import { formatCfa, formatDate, initials } from "@/lib/dashboard-utils";
 
@@ -19,6 +20,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const page = Number(params.page ?? "1") || 1;
   const limit = 20;
   const status = params.status ?? "";
+  await requireDashboardUser();
   const [response, leases] = await Promise.all([
     serverApiFetch<ApiList<PaymentRow>>(`/api/payments?limit=${limit}&page=${page}${status ? `&status=${status}` : ""}${q ? `&q=${encodeURIComponent(q)}` : ""}`),
     serverApiFetch<ApiList<LeaseRow>>("/api/leases?limit=100"),

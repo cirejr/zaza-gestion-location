@@ -6,12 +6,14 @@ import { CreateLeaseDialog } from "@/components/dashboard/create-lease-dialog";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import { serverApiFetch } from "@/lib/server-api";
+import { requireDashboardUser } from "@/lib/dashboard-guard";
 import type { ApiApartment, ApiList, ApiTenant, LeaseRow } from "@/lib/dashboard-types";
 import { formatCfa, formatDate } from "@/lib/dashboard-utils";
 
 export const dynamic = "force-dynamic";
 
 export default async function LeasesPage() {
+  await requireDashboardUser();
   const [response, apartments, tenants] = await Promise.all([
     serverApiFetch<ApiList<LeaseRow>>("/api/leases?limit=100"),
     fetchAllApartments(),

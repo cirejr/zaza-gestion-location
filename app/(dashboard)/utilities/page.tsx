@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/dashboard/page-header";
 import { RowAction } from "@/components/dashboard/row-action";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import { serverApiFetch } from "@/lib/server-api";
+import { requireDashboardUser } from "@/lib/dashboard-guard";
 import type { ApiBuilding, ApiList, ApiUtility } from "@/lib/dashboard-types";
 import { formatCfa } from "@/lib/dashboard-utils";
 
@@ -19,6 +20,7 @@ const typeLabels: Record<string, string> = {
 };
 
 export default async function UtilitiesPage() {
+  await requireDashboardUser();
   const buildings = await serverApiFetch<ApiList<ApiBuilding>>("/api/buildings?limit=100");
   const groups = await Promise.all(buildings.data.map(async (building) => ({ building, response: await serverApiFetch<ApiList<ApiUtility>>(`/api/buildings/${building.id}/utilities?limit=100`) })));
   const invoices = groups.flatMap(({ building, response }) => response.data.map((utility) => ({ utility, building })));
