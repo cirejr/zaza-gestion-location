@@ -1,4 +1,4 @@
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, ilike, or } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
@@ -40,9 +40,11 @@ router.get("/tickets", async (c) => {
   const buildingId = c.req.query("buildingId");
   const status = c.req.query("status");
   const priority = c.req.query("priority");
+  const q = c.req.query("q")?.trim();
   if (buildingId) conditions.push(eq(maintenanceTickets.buildingId, parseUuid(buildingId, "building id")));
   if (status && ["pending", "in_progress", "resolved"].includes(status)) conditions.push(eq(maintenanceTickets.status, status as "pending" | "in_progress" | "resolved"));
   if (priority && ["low", "normal", "urgent"].includes(priority)) conditions.push(eq(maintenanceTickets.priority, priority as "low" | "normal" | "urgent"));
+  if (q) conditions.push(or(ilike(maintenanceTickets.title, `%${q}%`), ilike(maintenanceTickets.description, `%${q}%`), ilike(buildings.name, `%${q}%`))!);
   const where = and(...conditions);
   const db = getDb();
   const base = db.select({ ticket: maintenanceTickets, building: buildings, apartment: apartments })

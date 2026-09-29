@@ -1,4 +1,4 @@
-import { and, count, desc, eq, getTableColumns, inArray, or } from "drizzle-orm";
+import { and, count, desc, eq, getTableColumns, ilike, inArray, or } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
@@ -55,9 +55,11 @@ router.get("/leases", async (c) => {
   const { page, limit, offset } = pagination(c);
   const status = c.req.query("status");
   const buildingId = c.req.query("buildingId");
+  const q = c.req.query("q")?.trim();
   const conditions = [buildingAccessCondition(actor)];
   if (status && ["draft", "active", "expired", "terminated"].includes(status)) conditions.push(eq(leases.status, status as "draft" | "active" | "expired" | "terminated"));
   if (buildingId) conditions.push(eq(buildings.id, parseUuid(buildingId, "building id")));
+  if (q) conditions.push(or(ilike(tenants.fullName, `%${q}%`), ilike(apartments.unitNumber, `%${q}%`), ilike(buildings.name, `%${q}%`))!);
   const where = and(...conditions);
   const db = getDb();
   const [data, countRows] = await Promise.all([
@@ -74,6 +76,7 @@ router.get("/leases", async (c) => {
       .from(leases)
       .innerJoin(apartments, eq(leases.apartmentId, apartments.id))
       .innerJoin(buildings, eq(apartments.buildingId, buildings.id))
+      .innerJoin(tenants, eq(leases.tenantId, tenants.id))
       .where(where),
   ]);
   return c.json({ data, pagination: { page, limit, total: countValue(countRows) } });

@@ -74,7 +74,27 @@ async function PaymentsTable({ q, page, limit, status }: { q: string; page: numb
   const total = response.pagination?.total ?? response.data.length;
   return (
     <>
-      <ListControls query={q} page={page} limit={limit} total={total} placeholder="Rechercher un locataire ou une unité…" />
+      <ListControls
+        query={q}
+        page={page}
+        limit={limit}
+        total={total}
+        placeholder="Rechercher un locataire ou une unité…"
+        filters={[
+          {
+            name: "status",
+            label: "Statut",
+            value: status,
+            allLabel: "Tous les statuts",
+            options: [
+              { value: "paid", label: "Payé" },
+              { value: "pending", label: "En attente" },
+              { value: "failed", label: "Échoué" },
+              { value: "refunded", label: "Remboursé" },
+            ],
+          },
+        ]}
+      />
       <Card>
         <CardHeader>
           <CardTitle>Historique des paiements</CardTitle>

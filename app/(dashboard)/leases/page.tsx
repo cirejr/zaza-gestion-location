@@ -2,7 +2,8 @@ import { Suspense } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { CreateLeaseDialog } from "@/components/dashboard/create-lease-dialog";
-import { ButtonSkeleton, TableCardSkeleton } from "@/components/dashboard/skeletons";
+import { ListControls } from "@/components/dashboard/list-controls";
+import { ButtonSkeleton, ListControlsSkeleton, TableCardSkeleton } from "@/components/dashboard/skeletons";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { leaseColumns } from "./columns";
 import { serverApiFetch } from "@/lib/server-api";
@@ -15,7 +16,12 @@ type LeaseOptionApartment = ApiApartment & { buildingName: string };
 
 export const dynamic = "force-dynamic";
 
-export default async function LeasesPage() {
+export default async function LeasesPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; status?: string }> }) {
+  const params = await searchParams;
+  const q = params.q ?? "";
+  const page = Number(params.page ?? "1") || 1;
+  const status = params.status ?? "";
+  const limit = 20;
   await requireDashboardUser();
 
   return (
@@ -30,8 +36,11 @@ export default async function LeasesPage() {
           </Suspense>
         }
       />
-      <Suspense fallback={<TableCardSkeleton title="Contrats de location" rows={8} columns={6} />}>
-        <LeasesSection />
+      <Suspense fallback={<>
+        <ListControlsSkeleton />
+        <TableCardSkeleton title="Contrats de location" rows={8} columns={6} />
+      </>}>
+        <LeasesSection q={q} page={page} limit={limit} status={status} />
       </Suspense>
     </div>
   );
@@ -47,17 +56,44 @@ async function LeaseDialogAction() {
   return <CreateLeaseDialog apartments={apartmentOptions} tenants={tenantOptions} />;
 }
 
-async function LeasesSection() {
-  const response = await serverApiFetch<ApiList<LeaseRow>>("/api/leases?limit=100");
+async function LeasesSection({ q, page, limit, status }: { q: string; page: number; limit: number; status: string }) {
+  const query = new URLSearchParams({ limit: String(limit), page: String(page) });
+  if (status) query.set("status", status);
+  if (q) query.set("q", q);
+  const response = await serverApiFetch<ApiList<LeaseRow>>(`/api/leases?${query.toString()}`);
+  const total = response.pagination?.total ?? response.data.length;
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Contrats de location</CardTitle>
-        <CardDescription>{response.data.length} bail(s) dans votre portefeuille.</CardDescription>
-      </CardHeader>
-      <CardContent className="px-0">
-        <DataTable columns={leaseColumns} data={response.data} emptyMessage="Aucun bail enregistré." />
-      </CardContent>
-    </Card>
+    <>
+      <ListControls
+        query={q}
+        page={page}
+        limit={limit}
+        total={total}
+        placeholder="Rechercher un locataire ou une unité…"
+        filters={[
+          {
+            name: "status",
+            label: "Statut",
+            value: status,
+            allLabel: "Tous les statuts",
+            options: [
+              { value: "draft", label: "Brouillon" },
+              { value: "active", label: "Actif" },
+              { value: "expired", label: "Expiré" },
+              { value: "terminated", label: "Résilié" },
+            ],
+          },
+        ]}
+      />
+      <Card>
+        <CardHeader>
+          <CardTitle>Contrats de location</CardTitle>
+          <CardDescription>{total} bail(s) dans votre portefeuille.</CardDescription>
+        </CardHeader>
+        <CardContent className="px-0">
+          <DataTable columns={leaseColumns} data={response.data} emptyMessage="Aucun bail enregistré." />
+        </CardContent>
+      </Card>
+    </>
   );
 }
