@@ -205,7 +205,7 @@ router.delete("/payments/:id", async (c) => {
   requireRole(actor, ["owner", "manager"]);
   const id = parseUuid(c.req.param("id"), "payment id");
   const context = await getPaymentContext(id, actor);
-  if (context.payment.status !== "pending") throw new HTTPException(409, { message: "Only pending payments can be deleted." });
+  if (context.payment.status !== "pending") throw new HTTPException(409, { message: "Seuls les paiements en attente peuvent être supprimés." });
   await getDb().delete(payments).where(eq(payments.id, id));
   return c.body(null, 204);
 });

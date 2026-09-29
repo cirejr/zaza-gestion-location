@@ -42,7 +42,7 @@ export async function requireActor(c: RequestContext): Promise<DomainUser> {
 
 export function requireRole(actor: DomainUser, roles: AppRole[]) {
   if (!roles.includes(actor.role as AppRole)) {
-    throw new HTTPException(403, { message: "You do not have permission to perform this action." });
+    throw new HTTPException(403, { message: "Vous n’avez pas les droits nécessaires pour cette action." });
   }
 }
 

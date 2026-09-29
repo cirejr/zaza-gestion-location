@@ -2,6 +2,8 @@
 
 import { MessageCircle } from "lucide-react";
 import { createColumnHelper } from "@tanstack/react-table";
+import { EditTenantDialog } from "@/components/dashboard/edit-dialogs";
+import { RowAction } from "@/components/dashboard/row-action";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import { DataTableColumnHeader } from "@/components/ui/data-table-column-header";
 import type { DataTableFeatures } from "@/components/ui/data-table-features";
@@ -51,7 +53,7 @@ export const tenantColumns = columnHelper.columns([
     id: "contactAction",
     header: () => <span className="block text-right">Action</span>,
     cell: ({ row }) => (
-      <div className="flex justify-end">
+      <div className="flex items-center justify-end gap-1">
         <a
           href={`https://wa.me/${(row.original.whatsappNumber ?? row.original.phone).replace(/[^0-9]/g, "")}`}
           target="_blank"
@@ -61,6 +63,16 @@ export const tenantColumns = columnHelper.columns([
         >
           <MessageCircle /> WhatsApp
         </a>
+        <EditTenantDialog tenant={row.original} />
+        <RowAction
+          endpoint={`/api/tenants/${row.original.id}`}
+          method="DELETE"
+          label="Supprimer le locataire"
+          icon="trash"
+          confirm
+          confirmTitle={`Supprimer ${row.original.fullName} ? Un locataire avec des baux ne peut pas être supprimé.`}
+          successMessage="Locataire supprimé."
+        />
       </div>
     ),
   }),

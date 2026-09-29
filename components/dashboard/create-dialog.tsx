@@ -2,7 +2,7 @@
 
 import { AlertCircle, Plus, UploadCloud, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type ReactElement } from "react";
 import { toast } from "sonner";
 import { ApiError, apiFetch } from "@/lib/api";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -50,8 +50,8 @@ function buildPayload(fields: DialogField[], values: Values) {
   const payload: Record<string, unknown> = {};
   for (const field of fields) {
     const raw = values[field.name];
-    // Omit empty optional numbers/amounts instead of sending "" (or null): the
-    // API schemas use `default(...)` / `nullable().optional()`, which only apply
+    // Omit empty optional values instead of sending "" (or null): the API
+    // schemas use `default(...)` / `nullable().optional()`, which only apply
     // when the field is absent — an empty string fails zod validation.
     if (field.type === "amount" && typeof raw === "string") {
       const parsed = parseAmountInput(raw);
@@ -65,6 +65,7 @@ function buildPayload(fields: DialogField[], values: Values) {
       payload[field.name] = Number(trimmed);
       continue;
     }
+    if (typeof raw === "string" && raw.trim() === "") continue;
     payload[field.name] = raw;
   }
   return payload;
@@ -103,33 +104,53 @@ export async function uploadFile(file: File): Promise<string> {
   return `${origin}/api/uploads/${presigned.data.key}`;
 }
 
+function initialValues(fields: DialogField[], defaults?: Values): Values {
+  return Object.fromEntries(fields.map((field) => [field.name, defaults?.[field.name] ?? ""]));
+}
+
 export function CreateDialog({
   triggerLabel,
+  trigger,
   title,
   description,
   fields,
   endpoint,
+  method = "POST",
   successMessage,
   transform,
   size = "sm:max-w-lg",
+  defaults,
+  submitLabel = "Enregistrer",
 }: {
   triggerLabel?: string;
+  trigger?: ReactElement;
   title: string;
   description?: string;
   fields: DialogField[];
   endpoint: string | ((payload: Record<string, unknown>) => string);
+  method?: "POST" | "PATCH";
   successMessage: string;
   transform?: (payload: Record<string, unknown>) => Record<string, unknown>;
   size?: string;
+  defaults?: Values;
+  submitLabel?: string;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [values, setValues] = useState<Values>(() =>
-    Object.fromEntries(fields.map((field) => [field.name, field.type === "select" ? "" : ""])),
-  );
+  const [values, setValues] = useState<Values>(() => initialValues(fields, defaults));
   const [uploadingName, setUploadingName] = useState<string | null>(null);
+
+  // Re-seed every time the dialog opens so row-level edit dialogs never show a
+  // stale value from a previous open or a previous row.
+  function handleOpenChange(next: boolean) {
+    setOpen(next);
+    if (next) {
+      setValues(initialValues(fields, defaults));
+      setError(null);
+    }
+  }
 
   function setValue(name: string, value: unknown) {
     setValues((current) => ({ ...current, [name]: value }));
@@ -162,7 +183,7 @@ export function CreateDialog({
       const payload = buildPayload(fields, values);
       const url = typeof endpoint === "function" ? endpoint(payload) : endpoint;
       const finalPayload = transform ? transform(payload) : payload;
-      await apiFetch(url, { method: "POST", body: JSON.stringify(finalPayload) });
+      await apiFetch(url, { method, body: JSON.stringify(finalPayload) });
       toast.success(successMessage);
       setOpen(false);
       router.refresh();
@@ -174,10 +195,14 @@ export function CreateDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button />}>
-        <Plus data-icon="inline-start" />
-        {triggerLabel ?? "Ajouter"}
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogTrigger render={trigger ?? <Button />}>
+        {trigger ? null : (
+          <>
+            <Plus data-icon="inline-start" />
+            {triggerLabel ?? "Ajouter"}
+          </>
+        )}
       </DialogTrigger>
       <DialogContent className={size}>
         <DialogHeader>
@@ -292,7 +317,7 @@ export function CreateDialog({
                   <Spinner data-icon="inline-start" />Enregistrement…
                 </>
               ) : (
-                "Enregistrer"
+                submitLabel
               )}
             </Button>
           </DialogFooter>

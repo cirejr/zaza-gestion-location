@@ -5,6 +5,7 @@ import { createColumnHelper } from "@tanstack/react-table";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import { CreatePaymentLinkButton } from "@/components/dashboard/create-payment-link-button";
+import { EditPaymentDialog } from "@/components/dashboard/edit-dialogs";
 import { RowAction } from "@/components/dashboard/row-action";
 import { DataTableColumnHeader } from "@/components/ui/data-table-column-header";
 import type { DataTableFeatures } from "@/components/ui/data-table-features";
@@ -75,6 +76,18 @@ export const paymentColumns = columnHelper.columns([
         <Button render={<a href={`/api/payments/${row.original.payment.id}/receipt.pdf`} target="_blank" rel="noreferrer" />} variant="ghost" size="icon-sm" aria-label="Télécharger le reçu">
           <Download />
         </Button>
+        <EditPaymentDialog payment={row.original.payment} />
+        {row.original.payment.status === "pending" && (
+          <RowAction
+            endpoint={`/api/payments/${row.original.payment.id}`}
+            method="DELETE"
+            label="Supprimer le paiement"
+            icon="trash"
+            confirm
+            confirmTitle="Supprimer cet encaissement en attente ?"
+            successMessage="Paiement supprimé."
+          />
+        )}
       </div>
     ),
   }),

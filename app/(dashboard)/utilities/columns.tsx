@@ -2,6 +2,7 @@
 
 import { Droplets } from "lucide-react";
 import { createColumnHelper } from "@tanstack/react-table";
+import { EditUtilityDialog } from "@/components/dashboard/edit-dialogs";
 import { RowAction } from "@/components/dashboard/row-action";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import { DataTableColumnHeader } from "@/components/ui/data-table-column-header";
@@ -58,7 +59,7 @@ export const utilityColumns = columnHelper.columns([
     id: "actions",
     header: () => <span className="block text-right">Action</span>,
     cell: ({ row }) => (
-      <div className="flex justify-end">
+      <div className="flex items-center justify-end gap-1">
         <RowAction
           endpoint={`/api/utilities/${row.original.utility.id}/notify`}
           label="Notifier les locataires"
@@ -67,6 +68,16 @@ export const utilityColumns = columnHelper.columns([
           confirmTitle="Envoyer la note aux locataires par WhatsApp ?"
           successMessage="Notes envoyées."
           disabled={row.original.utility.splitStatus === "notified"}
+        />
+        <EditUtilityDialog utility={row.original.utility} />
+        <RowAction
+          endpoint={`/api/utilities/${row.original.utility.id}`}
+          method="DELETE"
+          label="Supprimer la facture"
+          icon="trash"
+          confirm
+          confirmTitle="Supprimer cette facture et sa répartition ?"
+          successMessage="Facture supprimée."
         />
       </div>
     ),

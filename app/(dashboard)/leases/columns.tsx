@@ -3,6 +3,8 @@
 import { Download, FileText } from "lucide-react";
 import { createColumnHelper } from "@tanstack/react-table";
 import { Button } from "@/components/ui/button";
+import { EditLeaseDialog } from "@/components/dashboard/edit-dialogs";
+import { RowAction } from "@/components/dashboard/row-action";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import { DataTableColumnHeader } from "@/components/ui/data-table-column-header";
 import type { DataTableFeatures } from "@/components/ui/data-table-features";
@@ -47,13 +49,24 @@ export const leaseColumns = columnHelper.columns([
     cell: ({ row }) => <StatusBadge status={row.original.lease.status} />,
   }),
   columnHelper.display({
-    id: "document",
-    header: () => <span className="block text-right">Document</span>,
+    id: "actions",
+    header: () => <span className="block text-right">Actions</span>,
     cell: ({ row }) => (
-      <div className="flex justify-end">
+      <div className="flex items-center justify-end gap-1">
         <Button render={<a href={`/api/leases/${row.original.lease.id}/contract.pdf`} target="_blank" rel="noreferrer" />} variant="ghost" size="icon-sm" aria-label="Télécharger le contrat">
           <Download />
         </Button>
+        <EditLeaseDialog lease={row.original.lease} />
+        {row.original.lease.status === "active" && (
+          <RowAction
+            endpoint={`/api/leases/${row.original.lease.id}/terminate`}
+            label="Résilier le bail"
+            icon="trash"
+            confirm
+            confirmTitle="Résilier ce bail ? L’unité repassera en statut libre."
+            successMessage="Bail résilié."
+          />
+        )}
       </div>
     ),
   }),

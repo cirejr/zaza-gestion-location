@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { getDb } from "@/db";
-import { apartments, buildings, leases } from "@/db/schema";
+import { apartments, buildings, leases, utilitySplits } from "@/db/schema";
 import { getBuildingForActor, requireActor, requireRole } from "@/server/lib/auth-context";
 import { pagination, parseBody, parseUuid, countValue } from "@/server/lib/http";
 import type { ApiEnv } from "@/server/session-middleware";
@@ -101,8 +101,19 @@ router.delete("/apartments/:id", async (c) => {
   const [current] = await db.select().from(apartments).where(eq(apartments.id, id)).limit(1);
   if (!current) throw new HTTPException(404, { message: "Apartment not found." });
   await getBuildingForActor(current.buildingId, actor);
-  const countRows = await db.select({ total: count() }).from(leases).where(and(eq(leases.apartmentId, id), or(eq(leases.status, "active"), eq(leases.status, "draft"))));
-  if (countValue(countRows) > 0) throw new HTTPException(409, { message: "Terminate or delete the apartment leases first." });
+  // `leases.apartment_id` and `utility_splits.apartment_id` are both RESTRICT, so a
+  // unit that has ever been leased or billed must keep its row: deleting it would
+  // fail on the constraint (a raw 500). Say it in plain language instead.
+  const [leaseRows, splitRows] = await Promise.all([
+    db.select({ total: count() }).from(leases).where(eq(leases.apartmentId, id)),
+    db.select({ total: count() }).from(utilitySplits).where(eq(utilitySplits.apartmentId, id)),
+  ]);
+  if (countValue(leaseRows) > 0) {
+    throw new HTTPException(409, { message: "Cette unité a un historique de baux : résiliez le bail, mais conservez l’unité." });
+  }
+  if (countValue(splitRows) > 0) {
+    throw new HTTPException(409, { message: "Cette unité figure dans une facture de charges : supprimez la facture avant de supprimer l’unité." });
+  }
   await db.delete(apartments).where(eq(apartments.id, id));
   await updateUnitCount(current.buildingId);
   return c.body(null, 204);

@@ -113,7 +113,7 @@ router.delete("/buildings/:id", async (c) => {
   await getBuildingForActor(id, actor);
   const db = getDb();
   const countRows = await db.select({ total: count() }).from(apartments).where(eq(apartments.buildingId, id));
-  if (countValue(countRows) > 0) throw new HTTPException(409, { message: "Delete the apartments before deleting this building." });
+  if (countValue(countRows) > 0) throw new HTTPException(409, { message: "Supprimez d’abord les unités de cet immeuble." });
   await db.delete(buildings).where(eq(buildings.id, id));
   return c.body(null, 204);
 });

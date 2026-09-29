@@ -2,6 +2,7 @@
 
 import { Wrench } from "lucide-react";
 import { createColumnHelper } from "@tanstack/react-table";
+import { EditTicketDialog } from "@/components/dashboard/edit-dialogs";
 import { RowAction } from "@/components/dashboard/row-action";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import { DataTableColumnHeader } from "@/components/ui/data-table-column-header";
@@ -50,10 +51,10 @@ export const ticketColumns = columnHelper.columns([
   }),
   columnHelper.display({
     id: "actions",
-    header: () => <span className="block text-right">Action</span>,
-    cell: ({ row }) =>
-      row.original.ticket.status !== "resolved" ? (
-        <div className="flex justify-end">
+    header: () => <span className="block text-right">Actions</span>,
+    cell: ({ row }) => (
+      <div className="flex items-center justify-end gap-1">
+        {row.original.ticket.status !== "resolved" && (
           <RowAction
             endpoint={`/api/tickets/${row.original.ticket.id}/resolve`}
             label="Marquer comme résolu"
@@ -63,7 +64,18 @@ export const ticketColumns = columnHelper.columns([
             confirmTitle="Marquer ce ticket comme résolu ?"
             successMessage="Ticket résolu."
           />
-        </div>
-      ) : null,
+        )}
+        <EditTicketDialog ticket={row.original.ticket} />
+        <RowAction
+          endpoint={`/api/tickets/${row.original.ticket.id}`}
+          method="DELETE"
+          label="Supprimer l’incident"
+          icon="trash"
+          confirm
+          confirmTitle="Supprimer définitivement cet incident ?"
+          successMessage="Incident supprimé."
+        />
+      </div>
+    ),
   }),
 ]);

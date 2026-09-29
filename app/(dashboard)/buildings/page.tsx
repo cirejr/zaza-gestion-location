@@ -8,6 +8,7 @@ import { DataTable } from "@/components/ui/data-table";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Separator } from "@/components/ui/separator";
 import { CreateBuildingDialog } from "@/components/dashboard/create-building-dialog";
+import { BuildingActions } from "@/components/dashboard/building-actions";
 import { ListControls } from "@/components/dashboard/list-controls";
 import { BuildingGridSkeleton, ListControlsSkeleton, TableCardSkeleton } from "@/components/dashboard/skeletons";
 import { PageHeader } from "@/components/dashboard/page-header";
@@ -67,7 +68,10 @@ async function BuildingsSection({ q, page, limit }: { q: string; page: number; l
                     <CardTitle>{building.name}</CardTitle>
                     <CardDescription className="mt-1">{building.address}</CardDescription>
                   </div>
-                  <span className="flex size-9 items-center justify-center rounded-xl bg-secondary text-secondary-foreground"><Building2 /></span>
+                  <div className="flex items-center gap-1">
+                    <span className="flex size-9 items-center justify-center rounded-xl bg-secondary text-secondary-foreground"><Building2 /></span>
+                    <BuildingActions building={building} />
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>

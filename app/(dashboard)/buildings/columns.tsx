@@ -1,6 +1,8 @@
 "use client";
 
 import { createColumnHelper } from "@tanstack/react-table";
+import { EditApartmentDialog } from "@/components/dashboard/edit-dialogs";
+import { RowAction } from "@/components/dashboard/row-action";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import { DataTableColumnHeader } from "@/components/ui/data-table-column-header";
 import type { DataTableFeatures } from "@/components/ui/data-table-features";
@@ -34,5 +36,23 @@ export const unitOverviewColumns = columnHelper.columns([
     id: "status",
     header: () => <span>Statut</span>,
     cell: ({ row }) => <StatusBadge status={row.original.apartment.status} />,
+  }),
+  columnHelper.display({
+    id: "actions",
+    header: () => <span className="block text-right">Actions</span>,
+    cell: ({ row }) => (
+      <div className="flex items-center justify-end gap-1">
+        <EditApartmentDialog apartment={row.original.apartment} />
+        <RowAction
+          endpoint={`/api/apartments/${row.original.apartment.id}`}
+          method="DELETE"
+          label="Supprimer l’unité"
+          icon="trash"
+          confirm
+          confirmTitle={`Supprimer l’unité ${row.original.apartment.unitNumber} ? Terminez d’abord ses baux.`}
+          successMessage="Unité supprimée."
+        />
+      </div>
+    ),
   }),
 ]);

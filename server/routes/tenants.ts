@@ -118,7 +118,7 @@ router.delete("/tenants/:id", async (c) => {
   const id = parseUuid(c.req.param("id"), "tenant id");
   const db = getDb();
   const countRows = await db.select({ total: count() }).from(leases).where(eq(leases.tenantId, id));
-  if (countValue(countRows) > 0) throw new HTTPException(409, { message: "This tenant has lease history and cannot be deleted." });
+  if (countValue(countRows) > 0) throw new HTTPException(409, { message: "Ce locataire a un historique de baux : il ne peut pas être supprimé." });
   const [deleted] = await db.delete(tenants).where(eq(tenants.id, id)).returning({ id: tenants.id });
   if (!deleted) throw new HTTPException(404, { message: "Tenant not found." });
   return c.body(null, 204);
