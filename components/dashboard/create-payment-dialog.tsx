@@ -13,7 +13,7 @@ const methodLabels: Record<string, string> = {
 export function CreatePaymentDialog({ leases }: { leases: SelectOption[] }) {
   const fields: DialogField[] = [
     { type: "select", name: "leaseId", label: "Bail", required: true, placeholder: "Choisir un bail", options: leases },
-    { type: "number", name: "amount", label: "Montant (FCFA)", min: 1, required: true },
+    { type: "amount", name: "amount", label: "Montant (FCFA)", min: 1, required: true },
     {
       type: "select",
       name: "paymentMethod",

@@ -17,6 +17,12 @@ function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
   )
 }
 
+/**
+ * Renders the selected item's label. Base UI resolves that label from the
+ * `items` prop on the `<Select>` root — without it the raw value is shown (an
+ * id, for selects fed from the database). Pass `items={options}` (or a
+ * `value -> label` record) whenever the option labels differ from their values.
+ */
 function SelectValue({ className, ...props }: SelectPrimitive.Value.Props) {
   return (
     <SelectPrimitive.Value

@@ -17,6 +17,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { AmountInput } from "@/components/ui/amount-input";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -27,12 +28,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
+import { parseAmountInput } from "@/lib/amount";
 
 export type SelectOption = { value: string; label: string };
 
 export type DialogField =
   | { type: "text"; name: string; label: string; placeholder?: string; required?: boolean }
   | { type: "number"; name: string; label: string; placeholder?: string; min?: number; step?: string; required?: boolean }
+  | { type: "amount"; name: string; label: string; placeholder?: string; min?: number; required?: boolean }
   | { type: "date"; name: string; label: string; required?: boolean }
   | { type: "select"; name: string; label: string; options: SelectOption[]; placeholder?: string; required?: boolean }
   | { type: "upload"; name: string; label: string; accept?: string; required?: boolean; hint?: string };
@@ -47,11 +50,17 @@ function buildPayload(fields: DialogField[], values: Values) {
   const payload: Record<string, unknown> = {};
   for (const field of fields) {
     const raw = values[field.name];
+    // Omit empty optional numbers/amounts instead of sending "" (or null): the
+    // API schemas use `default(...)` / `nullable().optional()`, which only apply
+    // when the field is absent — an empty string fails zod validation.
+    if (field.type === "amount" && typeof raw === "string") {
+      const parsed = parseAmountInput(raw);
+      if (parsed === null) continue;
+      payload[field.name] = parsed;
+      continue;
+    }
     if (field.type === "number" && typeof raw === "string") {
       const trimmed = raw.trim();
-      // Omit empty optional numbers instead of sending "" (or null): the API
-      // schemas use `default(...)` / `nullable().optional()`, which only apply
-      // when the field is absent — an empty string fails zod validation.
       if (trimmed === "") continue;
       payload[field.name] = Number(trimmed);
       continue;
@@ -59,6 +68,22 @@ function buildPayload(fields: DialogField[], values: Values) {
     payload[field.name] = raw;
   }
   return payload;
+}
+
+/**
+ * Amount fields render as text (so digits can be grouped), which means the
+ * browser no longer enforces `min` the way it did on `<input type="number">`.
+ */
+function amountError(fields: DialogField[], values: Values): string | null {
+  for (const field of fields) {
+    if (field.type !== "amount" || field.min === undefined) continue;
+    const raw = values[field.name];
+    const parsed = parseAmountInput(typeof raw === "string" ? raw : "");
+    if (parsed !== null && parsed < field.min) {
+      return `${field.label} doit être au minimum ${new Intl.NumberFormat("fr-FR").format(field.min)}.`;
+    }
+  }
+  return null;
 }
 
 /** Upload a file straight to the private uploads bucket via a presigned URL. */
@@ -127,6 +152,11 @@ export function CreateDialog({
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    const invalidAmount = amountError(fields, values);
+    if (invalidAmount) {
+      setError(invalidAmount);
+      return;
+    }
     setLoading(true);
     try {
       const payload = buildPayload(fields, values);
@@ -164,6 +194,7 @@ export function CreateDialog({
                     <Select
                       value={typeof values[field.name] === "string" ? (values[field.name] as string) : ""}
                       onValueChange={(value) => setValue(field.name, value)}
+                      items={field.options}
                     >
                       <SelectTrigger className="w-full" data-required={fieldIsRequired(field) || undefined}>
                         <SelectValue placeholder={field.placeholder ?? `Choisir ${field.label.toLowerCase()}`} />
@@ -221,18 +252,28 @@ export function CreateDialog({
               }
               const isNumber = field.type === "number";
               const isDate = field.type === "date";
+              const stringValue = typeof values[field.name] === "string" ? (values[field.name] as string) : "";
               return (
                 <Field key={field.name}>
                   <FieldLabel>{field.label}</FieldLabel>
-                  <Input
-                    type={isNumber ? "number" : isDate ? "date" : "text"}
-                    required={fieldIsRequired(field)}
-                    min={isNumber ? field.min : undefined}
-                    step={isNumber ? field.step : undefined}
-                    placeholder={"placeholder" in field ? field.placeholder : undefined}
-                    value={typeof values[field.name] === "string" ? (values[field.name] as string) : ""}
-                    onChange={(event) => setValue(field.name, event.target.value)}
-                  />
+                  {field.type === "amount" ? (
+                    <AmountInput
+                      required={fieldIsRequired(field)}
+                      placeholder={"placeholder" in field ? field.placeholder : undefined}
+                      value={stringValue}
+                      onValueChange={(value) => setValue(field.name, value)}
+                    />
+                  ) : (
+                    <Input
+                      type={isNumber ? "number" : isDate ? "date" : "text"}
+                      required={fieldIsRequired(field)}
+                      min={isNumber ? field.min : undefined}
+                      step={isNumber ? field.step : undefined}
+                      placeholder={"placeholder" in field ? field.placeholder : undefined}
+                      value={stringValue}
+                      onChange={(event) => setValue(field.name, event.target.value)}
+                    />
+                  )}
                 </Field>
               );
             })}

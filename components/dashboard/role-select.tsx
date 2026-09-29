@@ -14,6 +14,11 @@ const roleLabels: Record<ApiUser["role"], string> = {
   tenant: "Locataire",
 };
 
+const roleOptions = (Object.keys(roleLabels) as ApiUser["role"][]).map((role) => ({
+  value: role,
+  label: roleLabels[role],
+}));
+
 export function RoleSelect({ user }: { user: ApiUser }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -35,14 +40,14 @@ export function RoleSelect({ user }: { user: ApiUser }) {
 
   return (
     <div className="flex items-center gap-2">
-      <Select value={user.role} onValueChange={(value) => void changeRole(value as string)}>
+      <Select value={user.role} items={roleOptions} onValueChange={(value) => void changeRole(value as string)}>
         <SelectTrigger disabled={loading} className="w-36">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {(["owner", "manager", "tenant"] as const).map((role) => (
-            <SelectItem key={role} value={role}>
-              {roleLabels[role]}
+          {roleOptions.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
             </SelectItem>
           ))}
         </SelectContent>

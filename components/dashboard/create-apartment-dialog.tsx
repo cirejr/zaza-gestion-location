@@ -7,7 +7,7 @@ const apartmentFields: DialogField[] = [
   { type: "number", name: "floor", label: "Étage", min: -5 },
   { type: "number", name: "bedrooms", label: "Pièces", min: 0 },
   { type: "number", name: "areaSqm", label: "Surface (m²)", min: 1 },
-  { type: "number", name: "rentAmount", label: "Loyer mensuel (FCFA)", min: 0, required: true },
+  { type: "amount", name: "rentAmount", label: "Loyer mensuel (FCFA)", min: 0, required: true },
   {
     type: "select",
     name: "status",

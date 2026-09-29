@@ -8,8 +8,8 @@ export function CreateLeaseDialog({ apartments, tenants }: { apartments: SelectO
     { type: "select", name: "tenantId", label: "Locataire", required: true, placeholder: "Choisir un locataire", options: tenants },
     { type: "date", name: "startDate", label: "Début du bail", required: true },
     { type: "date", name: "endDate", label: "Fin du bail" },
-    { type: "number", name: "rentAmount", label: "Loyer mensuel (FCFA)", min: 0, required: true },
-    { type: "number", name: "depositAmount", label: "Caution (FCFA)", min: 0 },
+    { type: "amount", name: "rentAmount", label: "Loyer mensuel (FCFA)", min: 0, required: true },
+    { type: "amount", name: "depositAmount", label: "Caution (FCFA)", min: 0 },
     {
       type: "select",
       name: "status",
@@ -33,7 +33,6 @@ export function CreateLeaseDialog({ apartments, tenants }: { apartments: SelectO
       transform={(payload) => ({
         ...payload,
         endDate: payload.endDate ? String(payload.endDate) : null,
-        depositAmount: payload.depositAmount === "" ? 0 : payload.depositAmount,
       })}
     />
   );

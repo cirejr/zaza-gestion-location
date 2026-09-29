@@ -18,7 +18,7 @@ export function CreateTicketDialog({ buildings }: { buildings: SelectOption[] })
         { value: "urgent", label: "Urgente" },
       ],
     },
-    { type: "number", name: "cost", label: "Coût estimé (FCFA)", min: 0 },
+    { type: "amount", name: "cost", label: "Coût estimé (FCFA)", min: 0 },
     { type: "upload", name: "photoUrl", label: "Photo du problème", accept: "image/*", hint: "PNG, JPG ou WebP, 10 Mo maximum." },
   ];
 
@@ -33,7 +33,6 @@ export function CreateTicketDialog({ buildings }: { buildings: SelectOption[] })
       transform={(payload) => ({
         ...payload,
         description: String(payload.description || ""),
-        cost: payload.cost === "" ? null : payload.cost,
       })}
     />
   );

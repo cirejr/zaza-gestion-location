@@ -20,7 +20,7 @@ export function CreateUtilityDialog({ buildings }: { buildings: SelectOption[] }
       options: Object.entries(typeLabels).map(([value, label]) => ({ value, label })),
     },
     { type: "text", name: "supplier", label: "Fournisseur", placeholder: "SDE, SENELEC…" },
-    { type: "number", name: "totalAmount", label: "Montant total (FCFA)", min: 1, required: true },
+    { type: "amount", name: "totalAmount", label: "Montant total (FCFA)", min: 1, required: true },
     { type: "text", name: "period", label: "Période", placeholder: "Septembre 2026", required: true },
     { type: "upload", name: "invoiceUrl", label: "Facture (PDF)", accept: "application/pdf,image/*", hint: "Facture fournisseur, 10 Mo maximum." },
   ];
