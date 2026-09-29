@@ -1,0 +1,221 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --background: #f6f8f4;
+  --foreground: #173d35;
+  --forest: #123e35;
+  --forest-deep: #0d3029;
+  --sage: #e5f2ea;
+  --lime: #c9f06b;
+  --orange: #f27d4d;
+  --orange-soft: #fff0e8;
+  --line: #e4ebe5;
+  --muted: #71817c;
+  --blue: #4c8fe5;
+  --card: #ffffff;
+  --card-foreground: var(--foreground);
+  --popover: #ffffff;
+  --popover-foreground: var(--foreground);
+  --primary: #123e35;
+  --primary-foreground: #c9f06b;
+  --secondary: #e5f2ea;
+  --secondary-foreground: #173d35;
+  --muted: #f1f5f1;
+  --muted-foreground: #71817c;
+  --accent: #e5f2ea;
+  --accent-foreground: #173d35;
+  --destructive: #c25a3d;
+  --border: #e4ebe5;
+  --input: #dfe8df;
+  --ring: #8eb49a;
+  --radius: 0.75rem;
+  --sidebar: #123e35;
+  --sidebar-foreground: #f3faf4;
+  --sidebar-primary: #c9f06b;
+  --sidebar-primary-foreground: #123e35;
+  --sidebar-accent: #1d5548;
+  --sidebar-accent-foreground: #f3faf4;
+  --sidebar-border: rgba(255, 255, 255, 0.12);
+  --sidebar-ring: #c9f06b;
+}
+
+.dark {
+  --background: #0f211d;
+  --foreground: #eef7ef;
+  --card: #173d35;
+  --card-foreground: #eef7ef;
+  --popover: #173d35;
+  --popover-foreground: #eef7ef;
+  --primary: #c9f06b;
+  --primary-foreground: #123e35;
+  --secondary: #234c41;
+  --secondary-foreground: #eef7ef;
+  --muted: #1c3b33;
+  --muted-foreground: #a9c7b7;
+  --accent: #234c41;
+  --accent-foreground: #eef7ef;
+  --destructive: #f08b70;
+  --border: rgba(238, 247, 239, 0.14);
+  --input: rgba(238, 247, 239, 0.18);
+  --ring: #c9f06b;
+  --sidebar: #0b2822;
+  --sidebar-foreground: #eef7ef;
+  --sidebar-primary: #c9f06b;
+  --sidebar-primary-foreground: #123e35;
+  --sidebar-accent: #1d493e;
+  --sidebar-accent-foreground: #eef7ef;
+  --sidebar-border: rgba(238, 247, 239, 0.14);
+  --sidebar-ring: #c9f06b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  background: var(--background);
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+::selection {
+  background: #c9f06b;
+  color: var(--forest-deep);
+}
+
+/* A small set of component classes keeps the dashboard readable while allowing
+   Tailwind utilities to handle layout and responsive behavior. */
+.surface {
+  border: 1px solid var(--line);
+  background: #ffffff;
+  border-radius: 20px;
+  box-shadow: 0 7px 24px rgba(22, 61, 53, 0.035);
+}
+
+.soft-shadow {
+  box-shadow: 0 14px 40px rgba(22, 61, 53, 0.08);
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.fade-up {
+  animation: fade-up 0.45s ease both;
+}
+
+.fade-up-delay-1 {
+  animation-delay: 0.05s;
+}
+
+.fade-up-delay-2 {
+  animation-delay: 0.1s;
+}
+
+.fade-up-delay-3 {
+  animation-delay: 0.15s;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* The subtle grid on the hero panel gives the product a subtle architectural
+   reference without competing with the data. */
+.hero-grid {
+  background-image: linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  background-size: 30px 30px;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #9aa9a3;
+}
+
+.focus-ring:focus-visible {
+  outline: 3px solid rgba(201, 240, 107, 0.75);
+  outline-offset: 2px;
+}

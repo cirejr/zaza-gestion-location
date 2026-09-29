@@ -1,0 +1,14 @@
+export type ApiList<T> = { data: T[]; pagination?: { page?: number; limit?: number; total: number } };
+export type ApiUser = { id: string; name: string; email: string; role: "owner" | "manager" | "tenant"; phone?: string | null };
+export type ApiBuilding = { id: string; name: string; address: string; city?: string | null; country?: string; unitCount: number; photoUrls?: string[]; createdAt?: string };
+export type ApiApartment = { id: string; buildingId: string; unitNumber: string; floor?: number | null; bedrooms: number; areaSqm?: number | null; rentAmount: string; status: "occupied" | "vacant" | "maintenance" };
+export type ApiTenant = { id: string; fullName: string; phone: string; whatsappNumber?: string | null; identityDocUrl?: string | null };
+export type ApiLease = { id: string; apartmentId: string; tenantId: string; startDate: string; endDate?: string | null; rentAmount: string; depositAmount: string; status: string; contractUrl?: string | null };
+export type ApiPayment = { id: string; leaseId: string; amount: string; paymentMethod: string; transactionRef?: string | null; status: string; paidAt?: string | null; receiptUrl?: string | null; createdAt: string };
+export type ApiUtility = { id: string; buildingId: string; type: string; supplier?: string | null; totalAmount: string; period: string; splitStatus: string; invoiceUrl?: string | null; createdAt: string };
+export type ApiTicket = { id: string; buildingId: string; apartmentId?: string | null; title: string; description: string; cost?: string | null; status: string; priority: string; createdAt: string };
+export type ApiReport = { period: string; collected: number; charges: number; net: number; paymentCount: number; utilityCount: number; unitCount: number; occupied: number; occupancyRate: number };
+export type PaymentRow = { payment: ApiPayment; apartment: { id: string; unitNumber: string }; building: { id: string; name: string }; tenant: { id: string; fullName: string; phone?: string | null; whatsappNumber?: string | null } };
+export type LeaseRow = { lease: ApiLease; apartment: ApiApartment; building: ApiBuilding; tenant: ApiTenant };
+export type TicketRow = { ticket: ApiTicket; building: ApiBuilding; apartment?: ApiApartment | null };
+export type UtilityRow = ApiUtility & { building?: ApiBuilding | null };
