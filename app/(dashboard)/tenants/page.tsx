@@ -1,7 +1,9 @@
+import { Suspense } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { CreateDialog, type DialogField } from "@/components/dashboard/create-dialog";
 import { ListControls } from "@/components/dashboard/list-controls";
+import { KpiGridSkeleton, ListControlsSkeleton, TableCardSkeleton } from "@/components/dashboard/skeletons";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { tenantColumns } from "./columns";
 import { serverApiFetch } from "@/lib/server-api";
@@ -23,9 +25,6 @@ export default async function TenantsPage({ searchParams }: { searchParams: Prom
   const page = Number(params.page ?? "1") || 1;
   const limit = 20;
   await requireDashboardUser();
-  const response = await serverApiFetch<TenantOverviewResponse>(`/api/tenants/overview?limit=${limit}&page=${page}${q ? `&q=${encodeURIComponent(q)}` : ""}`);
-  const total = response.pagination?.total ?? response.data.length;
-  const summary = response.summary;
 
   return (
     <div className="flex flex-col gap-6">
@@ -44,6 +43,28 @@ export default async function TenantsPage({ searchParams }: { searchParams: Prom
           />
         }
       />
+      <Suspense
+        fallback={
+          <>
+            <ListControlsSkeleton />
+            <TableCardSkeleton title="Répertoire" rows={8} columns={5} />
+            <KpiGridSkeleton count={3} />
+          </>
+        }
+      >
+        <TenantsSection q={q} page={page} limit={limit} />
+      </Suspense>
+    </div>
+  );
+}
+
+async function TenantsSection({ q, page, limit }: { q: string; page: number; limit: number }) {
+  const response = await serverApiFetch<TenantOverviewResponse>(`/api/tenants/overview?limit=${limit}&page=${page}${q ? `&q=${encodeURIComponent(q)}` : ""}`);
+  const total = response.pagination?.total ?? response.data.length;
+  const summary = response.summary;
+
+  return (
+    <>
       <ListControls query={q} page={page} limit={limit} total={total} placeholder="Rechercher un locataire…" />
       <Card>
         <CardHeader>
@@ -59,6 +80,6 @@ export default async function TenantsPage({ searchParams }: { searchParams: Prom
         <Card><CardHeader><CardDescription>Baux à renouveler</CardDescription><CardTitle>{summary.otherLeases}</CardTitle></CardHeader></Card>
         <Card><CardHeader><CardDescription>Contact WhatsApp</CardDescription><CardTitle>{summary.whatsappTenants}</CardTitle></CardHeader></Card>
       </div>
-    </div>
+    </>
   );
 }

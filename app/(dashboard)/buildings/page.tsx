@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { Building2, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -8,6 +9,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/
 import { Separator } from "@/components/ui/separator";
 import { CreateBuildingDialog } from "@/components/dashboard/create-building-dialog";
 import { ListControls } from "@/components/dashboard/list-controls";
+import { BuildingGridSkeleton, ListControlsSkeleton, TableCardSkeleton } from "@/components/dashboard/skeletons";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { unitOverviewColumns } from "./columns";
 import { serverApiFetch } from "@/lib/server-api";
@@ -23,11 +25,6 @@ export default async function BuildingsPage({ searchParams }: { searchParams: Pr
   const page = Number(params.page ?? "1") || 1;
   const limit = Number(params.limit ?? "12") || 12;
   await requireDashboardUser();
-  const response = await serverApiFetch<ApiList<ApiBuildingOverview>>(
-    `/api/buildings/overview?limit=${limit}&page=${page}${q ? `&q=${encodeURIComponent(q)}` : ""}`,
-  );
-  const total = response.pagination?.total ?? response.data.length;
-  const apartmentGroups = response.data.map((building) => ({ building, apartments: building.apartments }));
 
   return (
     <div className="flex flex-col gap-6">
@@ -37,6 +34,26 @@ export default async function BuildingsPage({ searchParams }: { searchParams: Pr
         description="Gérez vos adresses, unités et statuts depuis un seul endroit."
         action={<CreateBuildingDialog />}
       />
+      <Suspense fallback={<>
+        <ListControlsSkeleton />
+        <BuildingGridSkeleton count={3} />
+        <TableCardSkeleton title="Unités" rows={5} columns={4} />
+      </>}>
+        <BuildingsSection q={q} page={page} limit={limit} />
+      </Suspense>
+    </div>
+  );
+}
+
+async function BuildingsSection({ q, page, limit }: { q: string; page: number; limit: number }) {
+  const response = await serverApiFetch<ApiList<ApiBuildingOverview>>(
+    `/api/buildings/overview?limit=${limit}&page=${page}${q ? `&q=${encodeURIComponent(q)}` : ""}`,
+  );
+  const total = response.pagination?.total ?? response.data.length;
+  const apartmentGroups = response.data.map((building) => ({ building, apartments: building.apartments }));
+
+  return (
+    <>
       <ListControls query={q} page={page} limit={limit} total={total} placeholder="Rechercher un immeuble…" />
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {apartmentGroups.length ? apartmentGroups.map(({ building, apartments }) => {
@@ -92,6 +109,6 @@ export default async function BuildingsPage({ searchParams }: { searchParams: Pr
           />
         </CardContent>
       </Card>
-    </div>
+    </>
   );
 }

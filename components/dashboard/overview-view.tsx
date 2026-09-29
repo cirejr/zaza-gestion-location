@@ -1,47 +1,212 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { ArrowDownLeft, ArrowUpRight, Building2, ChevronRight, CircleAlert, CreditCard, FileText, Plus, TrendingUp, WalletCards, Wrench, type LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
-import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
+import { KpiGridSkeleton, TableCardSkeleton } from "@/components/dashboard/skeletons";
 import { recentPaymentColumns } from "@/components/dashboard/overview-columns";
-import type { ApiBuilding, ApiReport, ApiUser, PaymentRow } from "@/lib/dashboard-types";
+import { cachedServerApiFetch } from "@/lib/server-api";
+import type { ApiBuilding, ApiList, ApiReport, ApiUser, PaymentRow } from "@/lib/dashboard-types";
 import { formatCfa } from "@/lib/dashboard-utils";
 
 function KpiCard({ label, value, detail, icon: Icon, tone = "default" }: { label: string; value: string; detail: string; icon: LucideIcon; tone?: "default" | "positive" | "warning" }) {
   return <Card className="gap-3"><CardHeader className="flex-row items-center justify-between space-y-0 pb-0"><div className="flex size-9 items-center justify-center rounded-xl bg-secondary text-secondary-foreground"><Icon /></div>{tone === "positive" && <Badge variant="secondary"><TrendingUp />En hausse</Badge>}</CardHeader><CardContent><p className="text-xs font-medium text-muted-foreground">{label}</p><p className="mt-1 text-2xl font-black tracking-tight">{value}</p><p className="mt-1 text-[11px] text-muted-foreground">{detail}</p></CardContent></Card>;
 }
 
-export function OverviewView({ buildings, payments, report, user }: { buildings: ApiBuilding[]; payments: PaymentRow[]; report: ApiReport; user: ApiUser }) {
-  const occupied = report.occupied;
-  const free = Math.max(0, report.unitCount - occupied);
-  const fresh = buildings.length === 0;
-  return <div className="flex flex-col gap-6">
-    {fresh && (
-      <Card className="border-primary/40 bg-primary/5">
-        <CardContent className="flex flex-col gap-4 py-8 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-4">
-            <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground"><Building2 /></span>
-            <div>
-              <p className="text-sm font-bold">Bienvenue {user.name.split(" ")[0]} — configurons votre espace.</p>
-              <p className="mt-1 text-sm text-muted-foreground">Commencez par enregistrer votre premier immeuble, puis ajoutez ses unités.</p>
-            </div>
-          </div>
-          <Button render={<Link href="/buildings" />}><Plus data-icon="inline-start" />Ajouter un immeuble</Button>
-        </CardContent>
-      </Card>
-    )}
-    <section className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,.65fr)]">
-      <Card className="overflow-hidden border-primary bg-primary text-primary-foreground shadow-lg"><CardHeader className="relative z-10"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-primary-foreground/70">Bonjour {user.name.split(" ")[0]}</p><CardTitle className="mt-2 max-w-xl text-2xl leading-tight text-primary-foreground sm:text-3xl">Vos immeubles sont sous contrôle.</CardTitle><CardDescription className="mt-3 max-w-lg text-primary-foreground/70">Suivez vos encaissements, charges et incidents depuis un espace unique.</CardDescription></CardHeader><CardContent className="relative z-10 flex flex-wrap items-center gap-3"><Button render={<Link href="/payments" />} className="bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary/90"><Plus data-icon="inline-start" />Enregistrer un paiement</Button><Button render={<Link href="/reports" />} variant="outline" className="border-primary-foreground/20 bg-transparent text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground"><FileText data-icon="inline-start" />Voir le rapport</Button></CardContent></Card>
-      <Card><CardHeader><CardDescription className="flex items-center gap-2"><CircleAlert className="size-4 text-primary" />À traiter</CardDescription><CardTitle>Priorités du jour</CardTitle></CardHeader><CardContent className="flex flex-col gap-2"><Link href="/payments" className="flex items-center gap-3 rounded-xl p-3 transition hover:bg-muted"><span className="flex size-9 items-center justify-center rounded-xl bg-secondary text-secondary-foreground"><WalletCards /></span><span className="min-w-0 flex-1"><span className="block text-sm font-semibold">Relances de loyer</span><span className="block text-xs text-muted-foreground">{payments.length} paiements récents à suivre</span></span><ChevronRight /></Link><Link href="/tickets" className="flex items-center gap-3 rounded-xl p-3 transition hover:bg-muted"><span className="flex size-9 items-center justify-center rounded-xl bg-secondary text-secondary-foreground"><Wrench /></span><span className="min-w-0 flex-1"><span className="block text-sm font-semibold">Incidents ouverts</span><span className="block text-xs text-muted-foreground">Suivez les travaux en cours</span></span><ChevronRight /></Link></CardContent></Card>
-    </section>
+const topSkeleton = (
+  <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,.65fr)]">
+    <Skeleton className="h-52 rounded-2xl" />
+    <Skeleton className="h-52 rounded-2xl" />
+  </div>
+);
 
-    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><KpiCard label="Encaissé sur la période" value={formatCfa(report.collected)} detail={`${report.paymentCount} paiements enregistrés`} icon={ArrowDownLeft} tone="positive" /><KpiCard label="Unités occupées" value={`${occupied}/${report.unitCount}`} detail={`${report.occupancyRate}% d’occupation`} icon={Building2} /><KpiCard label="Factures communes" value={formatCfa(report.charges)} detail={`${report.utilityCount} factures saisies`} icon={CreditCard} /><KpiCard label="Solde net" value={formatCfa(report.net)} detail="Après charges communes" icon={TrendingUp} tone={report.net >= 0 ? "positive" : "default"} /></section>
+const chartsSkeleton = (
+  <>
+    <KpiGridSkeleton count={4} block={4} />
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,.8fr)]">
+      <Skeleton className="h-64 rounded-2xl" />
+      <Skeleton className="h-64 rounded-2xl" />
+    </div>
+  </>
+);
 
-    <section className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,.8fr)]"><Card><CardHeader className="flex-row items-start justify-between space-y-0"><div><CardDescription>Performance</CardDescription><CardTitle>Évolution des encaissements</CardTitle></div><Badge variant="secondary">{report.period}</Badge></CardHeader><CardContent><div className="flex h-56 items-end gap-2 border-b border-border pb-2">{[38, 52, 46, 68, 61, 84, report.collected ? 92 : 12].map((height, index) => <div key={index} className="group flex h-full flex-1 items-end"><div className="w-full rounded-t-md bg-primary/85 transition group-hover:bg-primary" style={{ height: `${height}%` }} /></div>)}</div><div className="mt-3 flex justify-between text-[10px] text-muted-foreground"><span>Avr.</span><span>Mai</span><span>Juin</span><span>Juil.</span><span>Août</span><span>Sept.</span></div></CardContent></Card><Card><CardHeader><CardDescription>Ce mois</CardDescription><CardTitle>Occupation globale</CardTitle></CardHeader><CardContent><div className="flex flex-col items-center gap-5 py-4"><div className="flex size-36 items-center justify-center rounded-full" style={{ background: `conic-gradient(var(--primary) ${report.occupancyRate}%, var(--muted) ${report.occupancyRate}% 100%)` }}><div className="flex size-28 flex-col items-center justify-center rounded-full bg-card"><span className="text-2xl font-black">{report.occupancyRate}%</span><span className="text-[10px] text-muted-foreground">occupé</span></div></div><div className="grid w-full grid-cols-2 gap-3"><div className="rounded-xl bg-muted p-3"><p className="text-[10px] text-muted-foreground">Occupés</p><p className="mt-1 text-lg font-black">{occupied}</p></div><div className="rounded-xl bg-muted p-3"><p className="text-[10px] text-muted-foreground">Libres</p><p className="mt-1 text-lg font-black">{free}</p></div></div></div></CardContent></Card></section>
+const activitySkeleton = (
+  <div className="grid gap-5 2xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,.8fr)]">
+    <TableCardSkeleton title="Derniers paiements" rows={5} columns={5} />
+    <Card>
+      <CardHeader className="flex-row items-center justify-between space-y-0">
+        <div>
+          <CardDescription>Portefeuille</CardDescription>
+          <CardTitle>Vos immeubles</CardTitle>
+        </div>
+        <Skeleton className="size-8 rounded-md" />
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        {Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-14 w-full rounded-xl" />)}
+      </CardContent>
+    </Card>
+  </div>
+);
 
-    <section className="grid gap-5 2xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,.8fr)]"><Card className="overflow-hidden"><CardHeader className="flex-row items-center justify-between space-y-0"><div><CardDescription>Activité récente</CardDescription><CardTitle>Derniers paiements</CardTitle></div><Button render={<Link href="/payments" />} variant="ghost" size="sm">Voir tout<ChevronRight data-icon="inline-end" /></Button></CardHeader><CardContent className="px-0"><DataTable columns={recentPaymentColumns} data={payments.slice(0, 5)} emptyMessage="Aucun paiement enregistré." /></CardContent></Card><Card><CardHeader className="flex-row items-center justify-between space-y-0"><div><CardDescription>Portefeuille</CardDescription><CardTitle>Vos immeubles</CardTitle></div><Button render={<Link href="/buildings" />} variant="ghost" size="icon-sm" aria-label="Gérer les immeubles"><ArrowUpRight /></Button></CardHeader><CardContent className="flex flex-col gap-3">{buildings.length ? buildings.map((building) => <Link key={building.id} href="/buildings" className="flex items-center gap-3 rounded-xl border border-border p-3 transition hover:bg-muted"><span className="flex size-9 items-center justify-center rounded-xl bg-secondary text-secondary-foreground"><Building2 /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{building.name}</span><span className="block truncate text-[11px] text-muted-foreground">{building.address}</span></span><span className="text-xs font-bold text-muted-foreground">{building.unitCount}</span></Link>) : <div className="py-8 text-center text-sm text-muted-foreground">Ajoutez votre premier immeuble.</div>}</CardContent></Card></section>
-  </div>;
+export function OverviewView({ user }: { user: ApiUser }) {
+  return (
+    <div className="flex flex-col gap-6">
+      <Suspense fallback={topSkeleton}>
+        <OverviewTop user={user} />
+      </Suspense>
+      <Suspense fallback={chartsSkeleton}>
+        <OverviewKpisAndCharts />
+      </Suspense>
+      <Suspense fallback={activitySkeleton}>
+        <OverviewActivity />
+      </Suspense>
+    </div>
+  );
 }
 
+async function OverviewTop({ user }: { user: ApiUser }) {
+  const [buildings, payments] = await Promise.all([
+    cachedServerApiFetch<ApiList<ApiBuilding>>("/api/buildings?limit=100"),
+    cachedServerApiFetch<ApiList<PaymentRow>>("/api/payments?limit=5"),
+  ]);
+  const fresh = buildings.data.length === 0;
+  return (
+    <>
+      {fresh && (
+        <Card className="border-primary/40 bg-primary/5">
+          <CardContent className="flex flex-col gap-4 py-8 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-4">
+              <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground"><Building2 /></span>
+              <div>
+                <p className="text-sm font-bold">Bienvenue {user.name.split(" ")[0]} — configurons votre espace.</p>
+                <p className="mt-1 text-sm text-muted-foreground">Commencez par enregistrer votre premier immeuble, puis ajoutez ses unités.</p>
+              </div>
+            </div>
+            <Button render={<Link href="/buildings" />}><Plus data-icon="inline-start" />Ajouter un immeuble</Button>
+          </CardContent>
+        </Card>
+      )}
+      <section className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,.65fr)]">
+        <Card className="overflow-hidden border-primary bg-primary text-primary-foreground shadow-lg">
+          <CardHeader className="relative z-10">
+            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-primary-foreground/70">Bonjour {user.name.split(" ")[0]}</p>
+            <CardTitle className="mt-2 max-w-xl text-2xl leading-tight text-primary-foreground sm:text-3xl">Vos immeubles sont sous contrôle.</CardTitle>
+            <CardDescription className="mt-3 max-w-lg text-primary-foreground/70">Suivez vos encaissements, charges et incidents depuis un espace unique.</CardDescription>
+          </CardHeader>
+          <CardContent className="relative z-10 flex flex-wrap items-center gap-3">
+            <Button render={<Link href="/payments" />} className="bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary/90"><Plus data-icon="inline-start" />Enregistrer un paiement</Button>
+            <Button render={<Link href="/reports" />} variant="outline" className="border-primary-foreground/20 bg-transparent text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground"><FileText data-icon="inline-start" />Voir le rapport</Button>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardDescription className="flex items-center gap-2"><CircleAlert className="size-4 text-primary" />À traiter</CardDescription>
+            <CardTitle>Priorités du jour</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            <Link href="/payments" className="flex items-center gap-3 rounded-xl p-3 transition hover:bg-muted">
+              <span className="flex size-9 items-center justify-center rounded-xl bg-secondary text-secondary-foreground"><WalletCards /></span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold">Relances de loyer</span>
+                <span className="block text-xs text-muted-foreground">{payments.data.length} paiements récents à suivre</span>
+              </span>
+              <ChevronRight />
+            </Link>
+            <Link href="/tickets" className="flex items-center gap-3 rounded-xl p-3 transition hover:bg-muted">
+              <span className="flex size-9 items-center justify-center rounded-xl bg-secondary text-secondary-foreground"><Wrench /></span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold">Incidents ouverts</span>
+                <span className="block text-xs text-muted-foreground">Suivez les travaux en cours</span>
+              </span>
+              <ChevronRight />
+            </Link>
+          </CardContent>
+        </Card>
+      </section>
+    </>
+  );
+}
+
+async function OverviewKpisAndCharts() {
+  const period = new Date().toISOString().slice(0, 7);
+  const report = (await cachedServerApiFetch<{ data: ApiReport }>(`/api/reports/summary?period=${period}`)).data;
+  const occupied = report.occupied;
+  const free = Math.max(0, report.unitCount - occupied);
+  return (
+    <>
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <KpiCard label="Encaissé sur la période" value={formatCfa(report.collected)} detail={`${report.paymentCount} paiements enregistrés`} icon={ArrowDownLeft} tone="positive" />
+        <KpiCard label="Unités occupées" value={`${occupied}/${report.unitCount}`} detail={`${report.occupancyRate}% d’occupation`} icon={Building2} />
+        <KpiCard label="Factures communes" value={formatCfa(report.charges)} detail={`${report.utilityCount} factures saisies`} icon={CreditCard} />
+        <KpiCard label="Solde net" value={formatCfa(report.net)} detail="Après charges communes" icon={TrendingUp} tone={report.net >= 0 ? "positive" : "default"} />
+      </section>
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,.8fr)]">
+        <Card>
+          <CardHeader className="flex-row items-start justify-between space-y-0">
+            <div><CardDescription>Performance</CardDescription><CardTitle>Évolution des encaissements</CardTitle></div>
+            <Badge variant="secondary">{report.period}</Badge>
+          </CardHeader>
+          <CardContent>
+            <div className="flex h-56 items-end gap-2 border-b border-border pb-2">{[38, 52, 46, 68, 61, 84, report.collected ? 92 : 12].map((height, index) => <div key={index} className="group flex h-full flex-1 items-end"><div className="w-full rounded-t-md bg-primary/85 transition group-hover:bg-primary" style={{ height: `${height}%` }} /></div>)}</div>
+            <div className="mt-3 flex justify-between text-[10px] text-muted-foreground"><span>Avr.</span><span>Mai</span><span>Juin</span><span>Juil.</span><span>Août</span><span>Sept.</span></div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardDescription>Ce mois</CardDescription><CardTitle>Occupation globale</CardTitle></CardHeader>
+          <CardContent>
+            <div className="flex flex-col items-center gap-5 py-4">
+              <div className="flex size-36 items-center justify-center rounded-full" style={{ background: `conic-gradient(var(--primary) ${report.occupancyRate}%, var(--muted) ${report.occupancyRate}% 100%)` }}>
+                <div className="flex size-28 flex-col items-center justify-center rounded-full bg-card"><span className="text-2xl font-black">{report.occupancyRate}%</span><span className="text-[10px] text-muted-foreground">occupé</span></div>
+              </div>
+              <div className="grid w-full grid-cols-2 gap-3">
+                <div className="rounded-xl bg-muted p-3"><p className="text-[10px] text-muted-foreground">Occupés</p><p className="mt-1 text-lg font-black">{occupied}</p></div>
+                <div className="rounded-xl bg-muted p-3"><p className="text-[10px] text-muted-foreground">Libres</p><p className="mt-1 text-lg font-black">{free}</p></div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+    </>
+  );
+}
+
+async function OverviewActivity() {
+  const [buildings, payments] = await Promise.all([
+    cachedServerApiFetch<ApiList<ApiBuilding>>("/api/buildings?limit=100"),
+    cachedServerApiFetch<ApiList<PaymentRow>>("/api/payments?limit=5"),
+  ]);
+  return (
+    <section className="grid gap-5 2xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,.8fr)]">
+      <Card className="overflow-hidden">
+        <CardHeader className="flex-row items-center justify-between space-y-0">
+          <div><CardDescription>Activité récente</CardDescription><CardTitle>Derniers paiements</CardTitle></div>
+          <Button render={<Link href="/payments" />} variant="ghost" size="sm">Voir tout<ChevronRight data-icon="inline-end" /></Button>
+        </CardHeader>
+        <CardContent className="px-0">
+          <DataTable columns={recentPaymentColumns} data={payments.data.slice(0, 5)} emptyMessage="Aucun paiement enregistré." />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader className="flex-row items-center justify-between space-y-0">
+          <div><CardDescription>Portefeuille</CardDescription><CardTitle>Vos immeubles</CardTitle></div>
+          <Button render={<Link href="/buildings" />} variant="ghost" size="icon-sm" aria-label="Gérer les immeubles"><ArrowUpRight /></Button>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          {buildings.data.length ? buildings.data.map((building) => (
+            <Link key={building.id} href="/buildings" className="flex items-center gap-3 rounded-xl border border-border p-3 transition hover:bg-muted">
+              <span className="flex size-9 items-center justify-center rounded-xl bg-secondary text-secondary-foreground"><Building2 /></span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-semibold">{building.name}</span>
+                <span className="block truncate text-[11px] text-muted-foreground">{building.address}</span>
+              </span>
+              <span className="text-xs font-bold text-muted-foreground">{building.unitCount}</span>
+            </Link>
+          )) : <div className="py-8 text-center text-sm text-muted-foreground">Ajoutez votre premier immeuble.</div>}
+        </CardContent>
+      </Card>
+    </section>
+  );
+}

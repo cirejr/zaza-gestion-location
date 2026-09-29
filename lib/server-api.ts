@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { api } from "@/server/app";
 
@@ -31,3 +32,11 @@ export async function serverApiFetch<T>(path: string, init: RequestInit = {}): P
   }
   return body as T;
 }
+
+/**
+ * Same call, memoized per request with React `cache()`, so two `<Suspense>`
+ * sections on the same page that need the same URL share one in-process call
+ * instead of running the query twice. Keyed by URL (string) — do not pass
+ * objects as `init` here or dedupe is lost.
+ */
+export const cachedServerApiFetch = cache(serverApiFetch);

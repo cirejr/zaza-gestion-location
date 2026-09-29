@@ -1,6 +1,8 @@
+import { Suspense } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { CreateTicketDialog } from "@/components/dashboard/create-ticket-dialog";
+import { ButtonSkeleton, KpiGridSkeleton, TableCardSkeleton } from "@/components/dashboard/skeletons";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { ticketColumns } from "./columns";
 import { serverApiFetch } from "@/lib/server-api";
@@ -11,12 +13,6 @@ export const dynamic = "force-dynamic";
 
 export default async function TicketsPage() {
   await requireDashboardUser();
-  const [response, buildings] = await Promise.all([
-    serverApiFetch<ApiList<TicketRow> & { summary: TicketSummary }>("/api/tickets?limit=100"),
-    serverApiFetch<ApiList<ApiBuilding>>("/api/buildings?limit=100"),
-  ]);
-
-  const buildingOptions = buildings.data.map((building) => ({ value: building.id, label: building.name }));
 
   return (
     <div className="flex flex-col gap-6">
@@ -24,8 +20,32 @@ export default async function TicketsPage() {
         eyebrow="Suivi des travaux"
         title="Incidents & travaux"
         description="Suivez chaque ticket de la déclaration à la résolution."
-        action={<CreateTicketDialog buildings={buildingOptions} />}
+        action={
+          <Suspense fallback={<ButtonSkeleton className="h-10 w-48" />}>
+            <TicketDialogAction />
+          </Suspense>
+        }
       />
+      <Suspense fallback={<>
+        <KpiGridSkeleton count={3} />
+        <TableCardSkeleton title="Tickets" rows={8} columns={6} />
+      </>}>
+        <TicketsSection />
+      </Suspense>
+    </div>
+  );
+}
+
+async function TicketDialogAction() {
+  const buildings = await serverApiFetch<ApiList<ApiBuilding>>("/api/buildings?limit=100");
+  const buildingOptions = buildings.data.map((building) => ({ value: building.id, label: building.name }));
+  return <CreateTicketDialog buildings={buildingOptions} />;
+}
+
+async function TicketsSection() {
+  const response = await serverApiFetch<ApiList<TicketRow> & { summary: TicketSummary }>("/api/tickets?limit=100");
+  return (
+    <>
       <div className="grid gap-4 sm:grid-cols-3">
         <Card><CardHeader><CardDescription>En attente</CardDescription><CardTitle>{response.summary.pending}</CardTitle></CardHeader></Card>
         <Card><CardHeader><CardDescription>En cours</CardDescription><CardTitle>{response.summary.inProgress}</CardTitle></CardHeader></Card>
@@ -40,6 +60,6 @@ export default async function TicketsPage() {
           <DataTable columns={ticketColumns} data={response.data} emptyMessage="Aucun incident enregistré." />
         </CardContent>
       </Card>
-    </div>
+    </>
   );
 }

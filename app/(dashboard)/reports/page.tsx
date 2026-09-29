@@ -1,6 +1,8 @@
+import { Suspense } from "react";
 import { Download, FileText, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { requireDashboardUser } from "@/lib/dashboard-guard";
 import { serverApiFetch } from "@/lib/server-api";
@@ -12,8 +14,6 @@ export const dynamic = "force-dynamic";
 export default async function ReportsPage() {
   const period = new Date().toISOString().slice(0, 7);
   await requireDashboardUser();
-  const report = await serverApiFetch<{ data: ApiReport }>(`/api/reports/summary?period=${period}`);
-  const data = report.data;
 
   return (
     <div className="flex flex-col gap-6">
@@ -22,24 +22,25 @@ export default async function ReportsPage() {
         title="Rapports"
         description="Un aperçu clair de vos encaissements, charges et taux d’occupation."
         action={
-          <Button render={<a href={`/api/reports/export.csv?period=${data.period}`} />} variant="outline">
+          <Button render={<a href={`/api/reports/export.csv?period=${period}`} />} variant="outline">
             <Download data-icon="inline-start" />
             Exporter CSV
           </Button>
         }
       />
-      <Card>
-        <CardHeader>
-          <CardTitle>Synthèse financière</CardTitle>
-          <CardDescription>Période {data.period}</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <Metric label="Revenus" value={formatCfa(data.collected)} />
-          <Metric label="Charges" value={formatCfa(data.charges)} />
-          <Metric label="Solde net" value={formatCfa(data.net)} />
-          <Metric label="Occupation" value={`${data.occupancyRate}%`} />
-        </CardContent>
-      </Card>
+      <Suspense fallback={
+        <Card>
+          <CardHeader>
+            <CardTitle>Synthèse financière</CardTitle>
+            <CardDescription><Skeleton className="h-3 w-32" /></CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, index) => <div key={index} className="rounded-xl bg-muted p-4"><Skeleton className="h-3 w-16" /><Skeleton className="mt-2 h-5 w-24" /></div>)}
+          </CardContent>
+        </Card>
+      }>
+        <ReportSummary period={period} />
+      </Suspense>
       <Card>
         <CardHeader>
           <CardTitle>Accès propriétaire</CardTitle>
@@ -62,7 +63,7 @@ export default async function ReportsPage() {
             <CardDescription>Synthèse propriétaire du mois.</CardDescription>
           </CardHeader>
           <CardContent>
-            <Button render={<a href={`/api/reports/export.pdf?period=${data.period}`} />} variant="outline" className="w-full">
+            <Button render={<a href={`/api/reports/export.pdf?period=${period}`} />} variant="outline" className="w-full">
               <FileText data-icon="inline-start" />
               Télécharger le PDF
             </Button>
@@ -82,6 +83,24 @@ export default async function ReportsPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+async function ReportSummary({ period }: { period: string }) {
+  const data = (await serverApiFetch<{ data: ApiReport }>(`/api/reports/summary?period=${period}`)).data;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Synthèse financière</CardTitle>
+        <CardDescription>Période {data.period}</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Metric label="Revenus" value={formatCfa(data.collected)} />
+        <Metric label="Charges" value={formatCfa(data.charges)} />
+        <Metric label="Solde net" value={formatCfa(data.net)} />
+        <Metric label="Occupation" value={`${data.occupancyRate}%`} />
+      </CardContent>
+    </Card>
   );
 }
 
