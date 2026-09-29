@@ -4,7 +4,7 @@ import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { apartments, buildings, commonUtilities, leases, tenants, utilitySplits } from "@/db/schema";
-import { isPreviewResult, sendSmsMessage, sendUtilityNotice, utilityNoticeMessage, type NotificationChannel } from "@/lib/notifications";
+import { isPreviewResult, sendSmsMessage, sendTwilioUtilityNotice, sendUtilityNotice, utilityNoticeMessage, type NotificationChannel } from "@/lib/notifications";
 import { splitCommonCharge } from "@/lib/utility-split";
 import { getBuildingForActor, requireActor, requireRole } from "@/server/lib/auth-context";
 import { pagination, parseBody, parseUuid, countValue } from "@/server/lib/http";
@@ -197,11 +197,16 @@ router.post("/utilities/:id/notify", async (c) => {
       unitNumber: row.apartment.unitNumber,
     };
     let result = await sendUtilityNotice({ to: phone, ...message });
-    // A preview means Meta is not configured, which is not the same as a send
-    // that failed: the note is still worth delivering by SMS rather than lost.
+    // Only an unconfigured provider justifies switching channels; a send that was
+    // attempted and failed is reported rather than re-sent behind the manager's
+    // back. Twilio's equivalent template sits between Meta and plain SMS.
     if (isPreviewResult(result)) {
-      const sms = await sendSmsMessage({ to: phone, message: utilityNoticeMessage(message) });
-      if (sms.delivered) result = sms;
+      const twilio = await sendTwilioUtilityNotice({ to: phone, ...message });
+      if (twilio.delivered) result = twilio;
+      else if (isPreviewResult(twilio)) {
+        const sms = await sendSmsMessage({ to: phone, message: utilityNoticeMessage(message) });
+        if (sms.delivered) result = sms;
+      }
     }
     // Only record what actually went out. Marking an undelivered note as sent
     // would push the invoice into `notified` and disable the retry button, so a

@@ -37,6 +37,29 @@ export function isPreviewResult(result: NotificationResult) {
 }
 
 /**
+ * Try one channel, then fall back to others, and stop at the first that actually
+ * delivered.
+ *
+ * Switching only happens on a *preview* result — "this provider is not
+ * configured". A send that was attempted and failed is returned as-is: silently
+ * re-sending a payment reminder over a channel the manager did not pick would
+ * hide the real failure and could duplicate a message the recipient already got.
+ */
+export async function deliverWithFallback(
+  primary: () => Promise<NotificationResult>,
+  fallbacks: Array<() => Promise<NotificationResult>>,
+): Promise<{ result: NotificationResult; attempts: NotificationResult[] }> {
+  const attempts: NotificationResult[] = [];
+  for (const send of [primary, ...fallbacks]) {
+    const result = await send();
+    attempts.push(result);
+    if (result.delivered) break;
+    if (!isPreviewResult(result)) break;
+  }
+  return { result: attempts[attempts.length - 1]!, attempts };
+}
+
+/**
  * Convert free text into strict E.164 for Twilio.
  *
  * Numbers reach this module from three places — the portal login form, a manager
@@ -226,41 +249,143 @@ export function utilityNoticeMessage(input: {
  * changes; the numeric fallback still serves networks that still accept it.
  */
 export async function sendSmsMessage(input: { to: string; message: string }): Promise<NotificationResult> {
+  const from = process.env.TWILIO_SENDER_ID || process.env.TWILIO_FROM_NUMBER;
+  const to = toE164(input.to);
+  if (!to) return invalidRecipient("sms", input.to);
+  return twilioRequest("sms", from, new URLSearchParams({ To: to, From: from ?? "", Body: input.message }));
+}
+
+/**
+ * WhatsApp through Twilio, reaching the same WhatsApp network as Meta's Cloud API
+ * with much less ceremony: a Twilio sender with WhatsApp enabled, and no Meta app
+ * review. The `whatsapp/authentication` content template is the reason this is
+ * worth having — WhatsApp presets its body, so an OTP needs no negotiated
+ * template copy.
+ *
+ * Free text is only accepted inside the 24h customer-service window, so anything
+ * business-initiated (a rent reminder, a charge note) must go out through an
+ * approved content template; pass its `HX…` sid in `contentSid`.
+ */
+export async function sendTwilioWhatsApp(input: {
+  to: string;
+  message?: string;
+  contentSid?: string;
+  contentVariables?: Record<string, string>;
+}): Promise<NotificationResult> {
+  const to = toE164(input.to);
+  if (!to) return invalidRecipient("whatsapp", input.to);
+
+  const params = new URLSearchParams({ To: `whatsapp:${to}` });
+  if (input.contentSid) {
+    params.set("ContentSid", input.contentSid);
+    params.set("ContentVariables", JSON.stringify(input.contentVariables ?? {}));
+  } else {
+    params.set("Body", input.message ?? "");
+  }
+  return twilioRequest("whatsapp", twilioWhatsappSender(), params);
+}
+
+/**
+ * OTP over Twilio WhatsApp, using WhatsApp's pre-approved authentication
+ * template.
+ *
+ * `code_expiration_minutes` on that template is the tenant's only statement of
+ * how long the code lives, so create it with the value the rest of the app
+ * assumes (5) — a mismatch there tells tenants a lie the server will not honour.
+ */
+export function sendTwilioOtp(input: { to: string; code: string }): Promise<NotificationResult> {
+  const contentSid = process.env.TWILIO_WHATSAPP_AUTH_CONTENT_SID;
+  if (!contentSid) return Promise.resolve(preview("whatsapp", "Template d'authentification Twilio non configuré"));
+  return sendTwilioWhatsApp({ to: input.to, contentSid, contentVariables: { "1": input.code } });
+}
+
+/** Rent reminder over Twilio WhatsApp, via a `relance_loyer` content template. */
+export function sendTwilioRentReminder(input: {
+  to: string;
+  tenantName: string;
+  buildingName: string;
+  unitNumber: string;
+  amount: number;
+  dueDate: string;
+}): Promise<NotificationResult> {
+  const contentSid = process.env.TWILIO_WHATSAPP_RENT_CONTENT_SID;
+  if (!contentSid) return Promise.resolve(preview("whatsapp", "Template de relance Twilio non configuré"));
+  return sendTwilioWhatsApp({
+    to: input.to,
+    contentSid,
+    contentVariables: {
+      "1": input.tenantName,
+      "2": input.unitNumber,
+      "3": input.buildingName,
+      "4": input.dueDate,
+      "5": input.amount.toLocaleString("fr-FR"),
+    },
+  });
+}
+
+/** Charge note over Twilio WhatsApp, via a `note_charges` content template. */
+export function sendTwilioUtilityNotice(input: {
+  to: string;
+  tenantName: string;
+  type: string;
+  period: string;
+  amount: number;
+  unitNumber: string;
+}): Promise<NotificationResult> {
+  const contentSid = process.env.TWILIO_WHATSAPP_UTILITY_CONTENT_SID;
+  if (!contentSid) return Promise.resolve(preview("whatsapp", "Template de charges Twilio non configuré"));
+  return sendTwilioWhatsApp({
+    to: input.to,
+    contentSid,
+    contentVariables: {
+      "1": input.tenantName,
+      "2": utilityTypeLabel(input.type),
+      "3": input.period,
+      "4": input.amount.toLocaleString("fr-FR"),
+      "5": input.unitNumber,
+    },
+  });
+}
+
+function invalidRecipient(channel: NotificationChannel, to: string): NotificationResult {
+  return { channel, messageId: `invalid-${Date.now()}`, delivered: false, providerMessage: `Numéro invalide : ${to}` };
+}
+
+/** Twilio's WhatsApp sender, accepting a bare number for convenience. */
+function twilioWhatsappSender() {
+  const from = process.env.TWILIO_WHATSAPP_FROM;
+  if (!from) return undefined;
+  return from.startsWith("whatsapp:") ? from : `whatsapp:${from}`;
+}
+
+/**
+ * Single HTTP call to the Twilio Messages API, shared by the SMS and WhatsApp
+ * senders. Returns rather than throws so callers can escalate with a message
+ * that names the Twilio error code — 21612 for a rejected sender, 21211 for a
+ * malformed number, 20003 for bad auth — instead of a bare status.
+ */
+async function twilioRequest(
+  channel: NotificationChannel,
+  from: string | undefined,
+  params: URLSearchParams,
+): Promise<NotificationResult> {
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
   const authToken = process.env.TWILIO_AUTH_TOKEN;
-  const from = process.env.TWILIO_SENDER_ID || process.env.TWILIO_FROM_NUMBER;
-  if (!accountSid || !authToken || !from) {
-    return preview("sms", "Twilio non configuré");
-  }
+  if (!accountSid || !authToken || !from) return preview(channel, "Twilio non configuré");
 
-  const to = toE164(input.to);
-  if (!to) {
-    return {
-      channel: "sms",
-      messageId: `invalid-${Date.now()}`,
-      delivered: false,
-      providerMessage: `Numéro invalide : ${input.to}`,
-    };
-  }
-
-  const body = new URLSearchParams({ To: to, From: from, Body: input.message });
   const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
     method: "POST",
     headers: {
       Authorization: `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString("base64")}`,
       "Content-Type": "application/x-www-form-urlencoded",
     },
-    body,
+    body: params,
   });
 
-  // Returns rather than throws: the OTP hook turns an undelivered result into a
-  // clean 503 that names the reason. A bare "Twilio returned 400." would hide
-  // the codes that actually explain it — 21612 for a rejected sender, 21211
-  // for a malformed number, 20003 for bad auth.
   if (!response.ok) {
     const error = (await response.json().catch(() => null)) as { code?: number; message?: string } | null;
     return {
-      channel: "sms",
+      channel,
       messageId: `twilio-error-${Date.now()}`,
       delivered: false,
       providerMessage: `Twilio ${error?.code ?? response.status}${error?.message ? ` : ${error.message}` : ""}`,
@@ -268,5 +393,5 @@ export async function sendSmsMessage(input: { to: string; message: string }): Pr
   }
 
   const result = (await response.json()) as { sid?: string; status?: string };
-  return { channel: "sms", messageId: result.sid ?? `twilio-${Date.now()}`, delivered: true, providerMessage: result.status };
+  return { channel, messageId: result.sid ?? `twilio-${Date.now()}`, delivered: true, providerMessage: result.status };
 }

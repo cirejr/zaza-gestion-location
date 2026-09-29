@@ -4,7 +4,7 @@ import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { notifications } from "@/db/schema";
-import { isPreviewResult, rentReminderMessage, sendRentReminder, sendSmsMessage, type NotificationResult } from "@/lib/notifications";
+import { deliverWithFallback, rentReminderMessage, sendRentReminder, sendSmsMessage, sendTwilioRentReminder, type NotificationResult } from "@/lib/notifications";
 import { requireActor, requireRole } from "@/server/lib/auth-context";
 import { countValue, pagination, parseBody, parseUuid } from "@/server/lib/http";
 import type { ApiEnv } from "@/server/session-middleware";
@@ -21,41 +21,47 @@ const input = z.object({
   paymentUrl: z.string().url().optional(),
 });
 
+/** The reminder fields both WhatsApp providers take, in their own template order. */
+function reminderFields(data: {
+  tenantName: string;
+  buildingName: string;
+  unitNumber: string;
+  amount: number;
+  dueDate: string;
+}) {
+  return {
+    tenantName: data.tenantName,
+    buildingName: data.buildingName,
+    unitNumber: data.unitNumber,
+    amount: data.amount,
+    dueDate: data.dueDate,
+  };
+}
+
 /**
- * Rent reminder. The WhatsApp channel always sends the approved `relance_loyer`
- * template (Meta no longer allows free text for business-initiated messages);
- * the `sms` channel uses a free-text fallback when enabled.
+ * Rent reminder. A WhatsApp request walks Meta's `relance_loyer` template, then
+ * Twilio's equivalent, then SMS — but only while each provider reports itself
+ * unconfigured. An explicit `sms` request stays on SMS.
  */
 router.post("/notifications/rent-reminder", async (c) => {
   const actor = await requireActor(c);
   requireRole(actor, ["owner", "manager"]);
   const data = await parseBody(c, input);
   const requested = data.channel;
-  let result =
+  const message = rentReminderMessage(data);
+  const { result, attempts } = await deliverWithFallback(
+    () =>
+      requested === "whatsapp"
+        ? sendRentReminder({ to: data.phone, ...reminderFields(data) })
+        : sendSmsMessage({ to: data.phone, message }),
     requested === "whatsapp"
-      ? await sendRentReminder({
-          to: data.phone,
-          tenantName: data.tenantName,
-          buildingName: data.buildingName,
-          unitNumber: data.unitNumber,
-          amount: data.amount,
-          dueDate: data.dueDate,
-        })
-      : await sendSmsMessage({ to: data.phone, message: rentReminderMessage(data) });
-
-  // A preview means Meta is not configured, which is not the same as a send that
-  // failed. Falling back there keeps the reminder useful while the Cloud API is
-  // still being set up; a genuine WhatsApp failure is reported as-is rather than
-  // silently re-sent over a channel the manager did not pick.
-  let fallback: NotificationResult | null = null;
-  if (requested === "whatsapp" && isPreviewResult(result)) {
-    const sms = await sendSmsMessage({ to: data.phone, message: rentReminderMessage(data) });
-    if (sms.delivered) {
-      fallback = sms;
-      result = sms;
-    }
-  }
-  return c.json({ data: { ...result, requestedChannel: requested, fallback } });
+      ? [
+          () => sendTwilioRentReminder({ to: data.phone, ...reminderFields(data) }),
+          () => sendSmsMessage({ to: data.phone, message }),
+        ]
+      : [],
+  );
+  return c.json({ data: { ...result, requestedChannel: requested, attempts } });
 });
 
 /**
