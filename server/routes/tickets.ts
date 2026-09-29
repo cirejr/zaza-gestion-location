@@ -50,11 +50,24 @@ router.get("/tickets", async (c) => {
     .innerJoin(buildings, eq(maintenanceTickets.buildingId, buildings.id))
     .leftJoin(apartments, eq(maintenanceTickets.apartmentId, apartments.id));
   const countBase = db.select({ total: count() }).from(maintenanceTickets).innerJoin(buildings, eq(maintenanceTickets.buildingId, buildings.id));
-  const [data, countRows] = await Promise.all([
+  const [data, countRows, statusRows] = await Promise.all([
     base.where(where).orderBy(desc(maintenanceTickets.createdAt)).limit(limit).offset(offset),
     countBase.where(where),
+    db.select({ status: maintenanceTickets.status, total: count() })
+      .from(maintenanceTickets)
+      .innerJoin(buildings, eq(maintenanceTickets.buildingId, buildings.id))
+      .where(and(conditions[0]))
+      .groupBy(maintenanceTickets.status),
   ]);
-  return c.json({ data, pagination: { page, limit, total: countValue(countRows) } });
+  return c.json({
+    data,
+    pagination: { page, limit, total: countValue(countRows) },
+    summary: {
+      pending: statusRows.find((row) => row.status === "pending")?.total ?? 0,
+      inProgress: statusRows.find((row) => row.status === "in_progress")?.total ?? 0,
+      resolved: statusRows.find((row) => row.status === "resolved")?.total ?? 0,
+    },
+  });
 });
 
 router.post("/tickets", async (c) => {

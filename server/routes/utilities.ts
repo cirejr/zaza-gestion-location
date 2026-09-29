@@ -1,4 +1,4 @@
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, ilike, or } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
@@ -70,6 +70,41 @@ router.post("/buildings/:buildingId/utilities", async (c) => {
     return utility;
   });
   return c.json({ data: created, splits: allocation }, 201);
+});
+
+router.get("/utilities/overview", async (c) => {
+  const actor = await requireActor(c);
+  requireRole(actor, ["owner", "manager"]);
+  const { page, limit, offset } = pagination(c);
+  const query = c.req.query("q")?.trim();
+  const scope = [actor.role === "owner" ? eq(buildings.ownerId, actor.id) : eq(buildings.managerId, actor.id)];
+  if (query) {
+    scope.push(or(
+      ilike(buildings.name, `%${query}%`),
+      ilike(commonUtilities.supplier, `%${query}%`),
+      ilike(commonUtilities.period, `%${query}%`),
+    )!);
+  }
+  const where = and(...scope);
+  const db = getDb();
+  const [buildingsRows, invoices, countRows] = await Promise.all([
+    db.select().from(buildings).where(and(scope[0])).orderBy(buildings.name),
+    db.select({ utility: commonUtilities, building: buildings })
+      .from(commonUtilities)
+      .innerJoin(buildings, eq(commonUtilities.buildingId, buildings.id))
+      .where(where)
+      .orderBy(desc(commonUtilities.createdAt))
+      .limit(limit)
+      .offset(offset),
+    db.select({ total: count() })
+      .from(commonUtilities)
+      .innerJoin(buildings, eq(commonUtilities.buildingId, buildings.id))
+      .where(where),
+  ]);
+  return c.json({
+    data: { buildings: buildingsRows, invoices },
+    pagination: { page, limit, total: countValue(countRows) },
+  });
 });
 
 router.get("/utilities/:id", async (c) => {

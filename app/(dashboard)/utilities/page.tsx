@@ -2,12 +2,13 @@ import { Droplets } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { CreateUtilityDialog } from "@/components/dashboard/create-utility-dialog";
+import { ListControls } from "@/components/dashboard/list-controls";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { RowAction } from "@/components/dashboard/row-action";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import { serverApiFetch } from "@/lib/server-api";
 import { requireDashboardUser } from "@/lib/dashboard-guard";
-import type { ApiBuilding, ApiList, ApiUtility } from "@/lib/dashboard-types";
+import type { UtilitiesOverviewResponse } from "@/lib/dashboard-types";
 import { formatCfa } from "@/lib/dashboard-utils";
 
 export const dynamic = "force-dynamic";
@@ -19,12 +20,16 @@ const typeLabels: Record<string, string> = {
   other: "Autre",
 };
 
-export default async function UtilitiesPage() {
+export default async function UtilitiesPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string }> }) {
+  const params = await searchParams;
+  const q = params.q ?? "";
+  const page = Number(params.page ?? "1") || 1;
+  const limit = 25;
   await requireDashboardUser();
-  const buildings = await serverApiFetch<ApiList<ApiBuilding>>("/api/buildings?limit=100");
-  const groups = await Promise.all(buildings.data.map(async (building) => ({ building, response: await serverApiFetch<ApiList<ApiUtility>>(`/api/buildings/${building.id}/utilities?limit=100`) })));
-  const invoices = groups.flatMap(({ building, response }) => response.data.map((utility) => ({ utility, building })));
-  const buildingOptions = buildings.data.map((building) => ({ value: building.id, label: building.name }));
+  const response = await serverApiFetch<UtilitiesOverviewResponse>(`/api/utilities/overview?limit=${limit}&page=${page}${q ? `&q=${encodeURIComponent(q)}` : ""}`);
+  const invoices = response.data.invoices;
+  const total = response.pagination?.total ?? invoices.length;
+  const buildingOptions = response.data.buildings.map((building) => ({ value: building.id, label: building.name }));
 
   return (
     <div className="flex flex-col gap-6">
@@ -34,10 +39,11 @@ export default async function UtilitiesPage() {
         description="Répartissez automatiquement les charges entre les unités."
         action={<CreateUtilityDialog buildings={buildingOptions} />}
       />
+      <ListControls query={q} page={page} limit={limit} total={total} placeholder="Rechercher un immeuble, fournisseur, période…" />
       <Card>
         <CardHeader>
           <CardTitle>Factures récentes</CardTitle>
-          <CardDescription>{invoices.length} facture(s) enregistrée(s).</CardDescription>
+          <CardDescription>{total} facture(s) enregistrée(s).</CardDescription>
         </CardHeader>
         <CardContent className="px-0">
           <Table>

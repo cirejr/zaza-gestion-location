@@ -2,7 +2,7 @@
 
 import { ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -22,6 +22,12 @@ export function ListControls({
   const router = useRouter();
   const searchParams = useSearchParams();
   const [draft, setDraft] = useState(query ?? "");
+
+  // Keep the input in sync when navigation changes the query (back/forward,
+  // cleared search) instead of only initializing once.
+  useEffect(() => {
+    setDraft(query ?? "");
+  }, [query]);
 
   const pages = Math.max(1, Math.ceil(total / limit));
   const safePage = Math.min(page, pages);

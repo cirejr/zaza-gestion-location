@@ -7,7 +7,7 @@ import { RowAction } from "@/components/dashboard/row-action";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import { serverApiFetch } from "@/lib/server-api";
 import { requireDashboardUser } from "@/lib/dashboard-guard";
-import type { ApiBuilding, ApiList, TicketRow } from "@/lib/dashboard-types";
+import type { ApiBuilding, ApiList, TicketRow, TicketSummary } from "@/lib/dashboard-types";
 import { formatDate } from "@/lib/dashboard-utils";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 export default async function TicketsPage() {
   await requireDashboardUser();
   const [response, buildings] = await Promise.all([
-    serverApiFetch<ApiList<TicketRow>>("/api/tickets?limit=100"),
+    serverApiFetch<ApiList<TicketRow> & { summary: TicketSummary }>("/api/tickets?limit=100"),
     serverApiFetch<ApiList<ApiBuilding>>("/api/buildings?limit=100"),
   ]);
 
@@ -30,14 +30,14 @@ export default async function TicketsPage() {
         action={<CreateTicketDialog buildings={buildingOptions} />}
       />
       <div className="grid gap-4 sm:grid-cols-3">
-        <Card><CardHeader><CardDescription>En attente</CardDescription><CardTitle>{response.data.filter((row) => row.ticket.status === "pending").length}</CardTitle></CardHeader></Card>
-        <Card><CardHeader><CardDescription>En cours</CardDescription><CardTitle>{response.data.filter((row) => row.ticket.status === "in_progress").length}</CardTitle></CardHeader></Card>
-        <Card><CardHeader><CardDescription>Résolus</CardDescription><CardTitle>{response.data.filter((row) => row.ticket.status === "resolved").length}</CardTitle></CardHeader></Card>
+        <Card><CardHeader><CardDescription>En attente</CardDescription><CardTitle>{response.summary.pending}</CardTitle></CardHeader></Card>
+        <Card><CardHeader><CardDescription>En cours</CardDescription><CardTitle>{response.summary.inProgress}</CardTitle></CardHeader></Card>
+        <Card><CardHeader><CardDescription>Résolus</CardDescription><CardTitle>{response.summary.resolved}</CardTitle></CardHeader></Card>
       </div>
       <Card>
         <CardHeader>
           <CardTitle>Tickets</CardTitle>
-          <CardDescription>{response.data.length} incident(s) dans votre portefeuille.</CardDescription>
+          <CardDescription>{response.pagination?.total ?? response.data.length} incident(s) dans votre portefeuille.</CardDescription>
         </CardHeader>
         <CardContent className="px-0">
           <Table>

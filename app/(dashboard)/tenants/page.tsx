@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/dashboard/page-header";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import { serverApiFetch } from "@/lib/server-api";
 import { requireDashboardUser } from "@/lib/dashboard-guard";
-import type { ApiList, ApiTenant, LeaseRow } from "@/lib/dashboard-types";
+import type { TenantOverviewResponse } from "@/lib/dashboard-types";
 import { formatDate, initials } from "@/lib/dashboard-utils";
 
 export const dynamic = "force-dynamic";
@@ -25,12 +25,9 @@ export default async function TenantsPage({ searchParams }: { searchParams: Prom
   const page = Number(params.page ?? "1") || 1;
   const limit = 20;
   await requireDashboardUser();
-  const [tenants, leases] = await Promise.all([
-    serverApiFetch<ApiList<ApiTenant>>(`/api/tenants?limit=${limit}&page=${page}${q ? `&q=${encodeURIComponent(q)}` : ""}`),
-    serverApiFetch<ApiList<LeaseRow>>("/api/leases?limit=100"),
-  ]);
-  const total = tenants.pagination?.total ?? tenants.data.length;
-  const leaseByTenant = new Map(leases.data.map((row) => [row.tenant.id, row]));
+  const response = await serverApiFetch<TenantOverviewResponse>(`/api/tenants/overview?limit=${limit}&page=${page}${q ? `&q=${encodeURIComponent(q)}` : ""}`);
+  const total = response.pagination?.total ?? response.data.length;
+  const summary = response.summary;
 
   return (
     <div className="flex flex-col gap-6">
@@ -67,8 +64,8 @@ export default async function TenantsPage({ searchParams }: { searchParams: Prom
               </TableRow>
             </TableHeader>
             <TableBody>
-              {tenants.data.length ? tenants.data.map((tenant) => {
-                const lease = leaseByTenant.get(tenant.id);
+              {response.data.length ? response.data.map((tenant) => {
+                const lease = tenant.lease;
                 return (
                   <TableRow key={tenant.id}>
                     <TableCell>
@@ -110,9 +107,9 @@ export default async function TenantsPage({ searchParams }: { searchParams: Prom
         </CardContent>
       </Card>
       <div className="grid gap-4 sm:grid-cols-3">
-        <Card><CardHeader><CardDescription>Locataires actifs</CardDescription><CardTitle>{leases.data.filter((row) => row.lease.status === "active").length}</CardTitle></CardHeader></Card>
-        <Card><CardHeader><CardDescription>Baux à renouveler</CardDescription><CardTitle>{leases.data.filter((row) => row.lease.status !== "active").length}</CardTitle></CardHeader></Card>
-        <Card><CardHeader><CardDescription>Contact WhatsApp</CardDescription><CardTitle>{tenants.data.filter((tenant) => tenant.whatsappNumber).length}</CardTitle></CardHeader></Card>
+        <Card><CardHeader><CardDescription>Baux actifs</CardDescription><CardTitle>{summary.activeLeases}</CardTitle></CardHeader></Card>
+        <Card><CardHeader><CardDescription>Baux à renouveler</CardDescription><CardTitle>{summary.otherLeases}</CardTitle></CardHeader></Card>
+        <Card><CardHeader><CardDescription>Contact WhatsApp</CardDescription><CardTitle>{summary.whatsappTenants}</CardTitle></CardHeader></Card>
       </div>
     </div>
   );

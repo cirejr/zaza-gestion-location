@@ -10,6 +10,18 @@ export type ApiPayment = { id: string; leaseId: string; amount: string; paymentM
 export type ApiUtility = { id: string; buildingId: string; type: string; supplier?: string | null; totalAmount: string; period: string; splitStatus: string; invoiceUrl?: string | null; createdAt: string };
 export type ApiTicket = { id: string; buildingId: string; apartmentId?: string | null; title: string; description: string; cost?: string | null; status: string; priority: string; createdAt: string };
 export type ApiReport = { period: string; collected: number; charges: number; net: number; paymentCount: number; utilityCount: number; unitCount: number; occupied: number; occupancyRate: number };
+export type PaymentSummary = { collected: number; paidCount: number; total: number; receiptCount: number };
+export type TicketSummary = { pending: number; inProgress: number; resolved: number };
+export type TenantOverviewRow = ApiTenant & { lease: LeaseRow | null };
+export type TenantOverviewResponse = {
+  data: TenantOverviewRow[];
+  pagination?: { page?: number; limit?: number; total: number };
+  summary: { activeLeases: number; otherLeases: number; whatsappTenants: number };
+};
+export type UtilitiesOverviewResponse = {
+  data: { buildings: ApiBuilding[]; invoices: Array<{ utility: ApiUtility; building: ApiBuilding }> };
+  pagination?: { page?: number; limit?: number; total: number };
+};
 export type PaymentRow = { payment: ApiPayment; apartment: { id: string; unitNumber: string }; building: { id: string; name: string }; tenant: { id: string; fullName: string; phone?: string | null; whatsappNumber?: string | null } };
 export type LeaseRow = { lease: ApiLease; apartment: ApiApartment; building: ApiBuilding; tenant: ApiTenant };
 export type TicketRow = { ticket: ApiTicket; building: ApiBuilding; apartment?: ApiApartment | null };

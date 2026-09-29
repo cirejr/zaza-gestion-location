@@ -1,10 +1,10 @@
-import { and, count, desc, eq, ilike, or } from "drizzle-orm";
+import { and, count, desc, eq, ilike, isNotNull, or } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { getDb } from "@/db";
-import { leases, tenants } from "@/db/schema";
-import { requireActor, requireRole } from "@/server/lib/auth-context";
+import { apartments, buildings, leases, tenants } from "@/db/schema";
+import { buildingAccessCondition, requireActor, requireRole } from "@/server/lib/auth-context";
 import { pagination, parseBody, parseUuid, countValue } from "@/server/lib/http";
 import type { ApiEnv } from "@/server/session-middleware";
 
@@ -32,6 +32,49 @@ router.get("/tenants", async (c) => {
     db.select({ total: count() }).from(tenants).where(where),
   ]);
   return c.json({ data, pagination: { page, limit, total: countValue(countRows) } });
+});
+
+/**
+ * Paginated tenant directory with the tenant's most recent lease resolved
+ * server-side, plus portfolio-wide counters. A single call replaces the page's
+ * previous `tenants` + full `leases?limit=100` fetch (which truncated at 100
+ * leases and, when mapped, let older leases overwrite newer ones).
+ */
+router.get("/tenants/overview", async (c) => {
+  const actor = await requireActor(c);
+  requireRole(actor, ["owner", "manager"]);
+  const { page, limit, offset } = pagination(c);
+  const query = c.req.query("q")?.trim();
+  const conditions = query ? [or(ilike(tenants.fullName, `%${query}%`), ilike(tenants.phone, `%${query}%`))!] : [];
+  const where = conditions.length ? and(...conditions) : undefined;
+  const db = getDb();
+  const [tenantRows, countRows, leaseRows, whatsappRows] = await Promise.all([
+    db.select().from(tenants).where(where).orderBy(desc(tenants.createdAt)).limit(limit).offset(offset),
+    db.select({ total: count() }).from(tenants).where(where),
+    db.select({ lease: leases, apartment: apartments, building: buildings, tenant: tenants })
+      .from(leases)
+      .innerJoin(apartments, eq(leases.apartmentId, apartments.id))
+      .innerJoin(buildings, eq(apartments.buildingId, buildings.id))
+      .innerJoin(tenants, eq(leases.tenantId, tenants.id))
+      .where(buildingAccessCondition(actor))
+      .orderBy(desc(leases.createdAt)),
+    db.select({ total: count() }).from(tenants).where(isNotNull(tenants.whatsappNumber)),
+  ]);
+  // Rows are newest first, so the first entry per tenant is its latest lease.
+  const leaseByTenant = new Map<string, (typeof leaseRows)[number]>();
+  for (const row of leaseRows) {
+    if (!leaseByTenant.has(row.tenant.id)) leaseByTenant.set(row.tenant.id, row);
+  }
+  const activeLeases = leaseRows.filter((row) => row.lease.status === "active").length;
+  return c.json({
+    data: tenantRows.map((tenant) => ({ ...tenant, lease: leaseByTenant.get(tenant.id) ?? null })),
+    pagination: { page, limit, total: countValue(countRows) },
+    summary: {
+      activeLeases,
+      otherLeases: leaseRows.length - activeLeases,
+      whatsappTenants: countValue(whatsappRows),
+    },
+  });
 });
 
 router.post("/tenants", async (c) => {

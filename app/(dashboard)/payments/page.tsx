@@ -10,7 +10,7 @@ import { RowAction } from "@/components/dashboard/row-action";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import { serverApiFetch } from "@/lib/server-api";
 import { requireDashboardUser } from "@/lib/dashboard-guard";
-import type { ApiList, LeaseRow, PaymentRow } from "@/lib/dashboard-types";
+import type { ApiList, LeaseRow, PaymentRow, PaymentSummary } from "@/lib/dashboard-types";
 import { formatCfa, formatDate, initials } from "@/lib/dashboard-utils";
 
 export const dynamic = "force-dynamic";
@@ -22,13 +22,14 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const limit = 20;
   const status = params.status ?? "";
   await requireDashboardUser();
-  const [response, leases] = await Promise.all([
+  const [response, leases, summaryResponse] = await Promise.all([
     serverApiFetch<ApiList<PaymentRow>>(`/api/payments?limit=${limit}&page=${page}${status ? `&status=${status}` : ""}${q ? `&q=${encodeURIComponent(q)}` : ""}`),
     serverApiFetch<ApiList<LeaseRow>>("/api/leases?limit=100"),
+    serverApiFetch<{ data: PaymentSummary }>("/api/payments/summary"),
   ]);
   const total = response.pagination?.total ?? response.data.length;
   const data = response.data;
-  const collected = data.filter((row) => row.payment.status === "paid").reduce((sum, row) => sum + Number(row.payment.amount), 0);
+  const summary = summaryResponse.data;
   const leaseOptions = leases.data.map((row) => ({ value: row.lease.id, label: `${row.tenant.fullName} — ${row.apartment.unitNumber}` }));
 
   return (
@@ -40,9 +41,9 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
         action={<CreatePaymentDialog leases={leaseOptions} />}
       />
       <div className="grid gap-4 sm:grid-cols-3">
-        <Card><CardHeader><CardDescription>Total encaissé</CardDescription><CardTitle>{formatCfa(collected)}</CardTitle></CardHeader></Card>
-        <Card><CardHeader><CardDescription>Paiements enregistrés</CardDescription><CardTitle>{total}</CardTitle></CardHeader></Card>
-        <Card><CardHeader><CardDescription>Reçus PDF</CardDescription><CardTitle>{data.filter((row) => row.payment.receiptUrl).length}</CardTitle></CardHeader></Card>
+        <Card><CardHeader><CardDescription>Total encaissé</CardDescription><CardTitle>{formatCfa(summary.collected)}</CardTitle></CardHeader></Card>
+        <Card><CardHeader><CardDescription>Paiements enregistrés</CardDescription><CardTitle>{summary.total}</CardTitle></CardHeader></Card>
+        <Card><CardHeader><CardDescription>Reçus PDF</CardDescription><CardTitle>{summary.receiptCount}</CardTitle></CardHeader></Card>
       </div>
       <ListControls query={q} page={page} limit={limit} total={total} placeholder="Rechercher un locataire ou une unité…" />
       <Card>

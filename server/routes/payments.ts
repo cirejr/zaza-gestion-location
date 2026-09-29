@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gte, ilike, lte, or } from "drizzle-orm";
+import { and, count, desc, eq, gte, ilike, lte, or, sum } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
@@ -88,6 +88,42 @@ router.get("/payments", async (c) => {
     countBase.where(where),
   ]);
   return c.json({ data, pagination: { page, limit, total: countValue(countRows) } });
+});
+
+/**
+ * Portfolio-wide cash metrics, independent of the list's pagination/search/status
+ * filters. `collect` sums only paid payments; `total`/`receiptCount` cover every
+ * payment in the actor's buildings.
+ */
+router.get("/payments/summary", async (c) => {
+  const actor = await requireActor(c);
+  requireRole(actor, ["owner", "manager"]);
+  const db = getDb();
+  const scope = [buildingAccessCondition(actor)];
+  const [paid, all] = await Promise.all([
+    db
+      .select({ total: count(), amount: sum(payments.amount) })
+      .from(payments)
+      .innerJoin(leases, eq(payments.leaseId, leases.id))
+      .innerJoin(apartments, eq(leases.apartmentId, apartments.id))
+      .innerJoin(buildings, eq(apartments.buildingId, buildings.id))
+      .where(and(...scope, eq(payments.status, "paid"))),
+    db
+      .select({ total: count(), receipts: count(payments.receiptUrl) })
+      .from(payments)
+      .innerJoin(leases, eq(payments.leaseId, leases.id))
+      .innerJoin(apartments, eq(leases.apartmentId, apartments.id))
+      .innerJoin(buildings, eq(apartments.buildingId, buildings.id))
+      .where(and(...scope)),
+  ]);
+  return c.json({
+    data: {
+      collected: Number(paid[0]?.amount ?? 0),
+      paidCount: countValue(paid),
+      total: countValue(all),
+      receiptCount: Number(all[0]?.receipts ?? 0),
+    },
+  });
 });
 
 router.post("/payments", async (c) => {
