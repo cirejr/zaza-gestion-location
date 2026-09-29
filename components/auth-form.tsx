@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, ArrowRight, Eye, EyeOff, KeyRound, LockKeyhole, Mail, Phone, ShieldCheck, Sparkles } from "lucide-react";
+import { AlertCircle, ArrowRight, Eye, EyeOff, KeyRound, LockKeyhole, Mail, Sparkles } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldSeparator } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { Spinner } from "@/components/ui/spinner";
 
 type AuthMode = "login" | "signup";
@@ -20,23 +19,23 @@ function errorMessage(value: unknown) {
   return "Une erreur est survenue. Réessayez.";
 }
 
+/**
+ * Management login (owners & managers). Tenants sign in from
+ * `/espace-locataire` with their phone number and a WhatsApp OTP — this
+ * surface intentionally has no phone/OTP path.
+ */
 export default function AuthForm({ mode }: { mode: AuthMode }) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [phone, setPhone] = useState("");
-  const [otp, setOtp] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [otpSent, setOtpSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
-    setSuccess(null);
     setLoading(true);
     try {
       const result = mode === "login"
@@ -70,48 +69,6 @@ export default function AuthForm({ mode }: { mode: AuthMode }) {
     }
   }
 
-  async function sendOtp() {
-    setError(null);
-    setSuccess(null);
-    if (!phone.trim()) {
-      setError("Saisissez votre numéro de téléphone.");
-      return;
-    }
-    setLoading(true);
-    try {
-      const result = await authClient.phoneNumber.sendOtp({ phoneNumber: phone });
-      if (result.error) {
-        setError(errorMessage(result.error));
-        return;
-      }
-      setOtpSent(true);
-      setSuccess("Code envoyé par SMS.");
-    } catch (requestError) {
-      setError(errorMessage(requestError));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function verifyOtp() {
-    setError(null);
-    setLoading(true);
-    try {
-      const result = await authClient.phoneNumber.verify({ phoneNumber: phone, code: otp });
-      if (result.error) {
-        setError(errorMessage(result.error));
-        return;
-      }
-      setSuccess("Code vérifié. Redirection en cours…");
-      router.push("/");
-      router.refresh();
-    } catch (requestError) {
-      setError(errorMessage(requestError));
-    } finally {
-      setLoading(false);
-    }
-  }
-
   return (
     <Card className="w-full max-w-[430px] border-border/70 shadow-xl">
       <CardHeader className="gap-2">
@@ -122,7 +79,7 @@ export default function AuthForm({ mode }: { mode: AuthMode }) {
             <p className="text-[9px] font-semibold uppercase tracking-[0.17em] text-muted-foreground">gestion locative</p>
           </div>
         </div>
-        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-primary">{mode === "login" ? "Bon retour parmi nous" : "Votre espace commence ici"}</p>
+        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-primary">{mode === "login" ? "Espace gestionnaires" : "Votre espace commence ici"}</p>
         <CardTitle className="text-2xl leading-tight tracking-tight">{mode === "login" ? "Reprenez le contrôle." : "Pilotez vos immeubles, simplement."}</CardTitle>
         <CardDescription>{mode === "login" ? "Connectez-vous pour suivre vos loyers, vos bâtiments et vos équipes en toute clarté." : "Créez votre compte et centralisez vos loyers, charges et incidents au même endroit."}</CardDescription>
       </CardHeader>
@@ -155,28 +112,14 @@ export default function AuthForm({ mode }: { mode: AuthMode }) {
               </Button>
             </FieldGroup>
           </form>
-          <FieldSeparator>ou par téléphone</FieldSeparator>
-          <FieldGroup>
-            <Field>
-              <FieldLabel htmlFor="phone">Connexion par SMS</FieldLabel>
-              <div className="flex gap-2">
-                <div className="relative flex-1"><Phone className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input id="phone" value={phone} onChange={(event) => { setPhone(event.target.value); setOtpSent(false); }} placeholder="+221 77 000 00 00" className="pl-10" /></div>
-                <Button type="button" variant="outline" onClick={() => void sendOtp()} disabled={loading}>{otpSent ? "Renvoyer" : "Recevoir"}</Button>
-              </div>
-            </Field>
-            {otpSent && (
-              <Field>
-                <FieldLabel htmlFor="otp">Code à 6 chiffres</FieldLabel>
-                <InputOTP id="otp" value={otp} onChange={setOtp} maxLength={6}><InputOTPGroup>{Array.from({ length: 6 }).map((_, index) => <InputOTPSlot key={index} index={index} />)}</InputOTPGroup></InputOTP>
-                <Button type="button" variant="secondary" onClick={() => void verifyOtp()} disabled={loading || otp.length < 6} className="w-full">Vérifier le code</Button>
-              </Field>
-            )}
-          </FieldGroup>
           {error && <Alert variant="destructive"><AlertCircle /><AlertDescription>{error}</AlertDescription></Alert>}
-          {success && <Alert><ShieldCheck /><AlertDescription>{success}</AlertDescription></Alert>}
         </FieldGroup>
         <p className="mt-6 text-center text-xs text-muted-foreground">{mode === "login" ? "Pas encore de compte ?" : "Vous avez déjà un compte ?"} <a href={mode === "login" ? "/signup" : "/login"} className="font-bold text-primary hover:underline">{mode === "login" ? "Créer un compte" : "Se connecter"}</a></p>
         {mode === "login" && <p className="mt-3 text-center text-[11px] text-muted-foreground"><a href="/forgot-password" className="hover:text-primary">Mot de passe oublié ?</a></p>}
+        <p className="mt-4 border-t pt-4 text-center text-[11px] text-muted-foreground">
+          Vous êtes <span className="font-semibold">locataire</span> ?{" "}
+          <a href="/espace-locataire" className="font-bold text-primary hover:underline">Connectez-vous depuis votre espace locataire</a>
+        </p>
       </CardContent>
     </Card>
   );

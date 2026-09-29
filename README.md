@@ -92,7 +92,7 @@ GET            /api/users
 PATCH          /api/users/:id/role
 ```
 
-Les routes métier nécessitent une session. Le premier compte Better Auth devient propriétaire de l’application; les comptes suivants sont créés avec le rôle tenant jusqu’à une affectation par un propriétaire.
+Les routes métier nécessitent une session. Modèle SaaS : chaque nouveau compte email/Google amorce son propre portefeuille comme `owner`, puis invite ou promeut ses gérants depuis la page Équipe.
 
 ## Frontend shadcn/ui
 
@@ -109,12 +109,13 @@ Le dashboard est découpé en pages Next.js sous `app/(dashboard)/` :
 - `/reports`
 
 
-Better Auth est intégré directement dans Hono (`/api/auth/*`). Le dashboard est protégé par `middleware.ts` et une vérification serveur de session dans `app/page.tsx`.
+Better Auth est intégré directement dans Hono (`/api/auth/*`). Le dashboard est protégé par `middleware.ts`, `lib/dashboard-guard.ts` (redirection tenant → portail) et une vérification serveur de session dans chaque page.
 
-- Email + mot de passe
-- Google OAuth
-- OTP téléphone
-- Rôles : `owner`, `manager`, `tenant`
+Deux surfaces de connexion distinctes :
+- `/login` — **gestionnaires & propriétaires uniquement** : email + mot de passe, Google OAuth.
+- `/espace-locataire` — **locataires uniquement** : téléphone + OTP WhatsApp (`naya_otp`), notes de charges, liens de paiement et reçus PDF.
+
+Rôles : `owner`, `manager`, `tenant`
 - Les propriétaires et gérants ont un accès scoped aux immeubles qui leur sont assignés.
 - Les propriétaires de la diaspora utilisent le même espace et les mêmes routes que les gérants locaux.
 

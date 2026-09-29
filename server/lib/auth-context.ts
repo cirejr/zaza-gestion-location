@@ -1,17 +1,18 @@
-import { and, count, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import { getDb } from "@/db";
 import { buildings, users, type User } from "@/db/schema";
-import { countValue, type RequestContext } from "@/server/lib/http";
+import type { RequestContext } from "@/server/lib/http";
 
 export type DomainUser = typeof users.$inferSelect;
 export type AppRole = "owner" | "manager" | "tenant";
 
 /**
  * Resolve the Better Auth identity to the application user profile used for
- * building ownership and role checks. The first authenticated account becomes
- * the initial owner; subsequent accounts default to tenant until an owner
- * assigns them a manager/owner role.
+ * building ownership and role checks. SaaS onboarding: every new email/Google
+ * account bootstraps its own portfolio as owner. Managers are invited and
+ * promoted by an owner from the team page; tenants use the phone-based
+ * tenant portal and never reach this path with an unknown email.
  */
 export async function requireActor(c: RequestContext): Promise<DomainUser> {
   const session = c.get("session");
@@ -27,11 +28,9 @@ export async function requireActor(c: RequestContext): Promise<DomainUser> {
   const [existing] = await db.select().from(users).where(eq(users.email, email)).limit(1);
   if (existing) return existing;
 
-  const countRows = await db.select({ total: count() }).from(users);
-  const role: AppRole = countValue(countRows) === 0 ? "owner" : "tenant";
   const [created] = await db
     .insert(users)
-    .values({ name: session.user.name, email, role })
+    .values({ name: session.user.name, email, role: "owner" })
     .onConflictDoNothing({ target: users.email })
     .returning();
 
