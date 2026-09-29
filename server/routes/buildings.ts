@@ -1,4 +1,4 @@
-import { and, count, eq, ilike, or } from "drizzle-orm";
+import { and, count, eq, ilike, inArray, or } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
@@ -51,6 +51,35 @@ router.post("/buildings", async (c) => {
     ownerId: actor.id,
   }).returning();
   return c.json({ data: building }, 201);
+});
+
+router.get("/buildings/overview", async (c) => {
+  const actor = await requireActor(c);
+  requireRole(actor, ["owner", "manager"]);
+  const { page, limit, offset } = pagination(c);
+  const query = c.req.query("q")?.trim();
+  const conditions = [actor.role === "owner" ? eq(buildings.ownerId, actor.id) : eq(buildings.managerId, actor.id)];
+  if (query) conditions.push(or(ilike(buildings.name, `%${query}%`), ilike(buildings.address, `%${query}%`))!);
+  const where = and(...conditions);
+  const db = getDb();
+  const [rows, countRows] = await Promise.all([
+    db.select().from(buildings).where(where).orderBy(buildings.createdAt).limit(limit).offset(offset),
+    db.select({ total: count() }).from(buildings).where(where),
+  ]);
+  // Load apartments for exactly the buildings shown on this page in one query,
+  // so the page makes a single API call instead of one per building.
+  const buildingIds = rows.map((building) => building.id);
+  const apartmentRows = buildingIds.length
+    ? await db.select().from(apartments).where(inArray(apartments.buildingId, buildingIds)).orderBy(apartments.unitNumber)
+    : [];
+  const byBuilding = new Map<string, typeof apartments.$inferSelect[]>();
+  for (const apartment of apartmentRows) {
+    const current = byBuilding.get(apartment.buildingId) ?? [];
+    current.push(apartment);
+    byBuilding.set(apartment.buildingId, current);
+  }
+  const data = rows.map((building) => ({ ...building, apartments: byBuilding.get(building.id) ?? [] }));
+  return c.json({ data, pagination: { page, limit, total: countValue(countRows) } });
 });
 
 router.get("/buildings/:id", async (c) => {

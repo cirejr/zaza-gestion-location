@@ -2,6 +2,8 @@ export type ApiList<T> = { data: T[]; pagination?: { page?: number; limit?: numb
 export type ApiUser = { id: string; name: string; email: string; role: "owner" | "manager" | "tenant"; phone?: string | null };
 export type ApiBuilding = { id: string; name: string; address: string; city?: string | null; country?: string; unitCount: number; photoUrls?: string[]; createdAt?: string };
 export type ApiApartment = { id: string; buildingId: string; unitNumber: string; floor?: number | null; bedrooms: number; areaSqm?: number | null; rentAmount: string; status: "occupied" | "vacant" | "maintenance" };
+/** Building with its apartments embedded — returned by `/api/buildings/overview`. */
+export type ApiBuildingOverview = ApiBuilding & { apartments: ApiApartment[] };
 export type ApiTenant = { id: string; fullName: string; phone: string; whatsappNumber?: string | null; identityDocUrl?: string | null };
 export type ApiLease = { id: string; apartmentId: string; tenantId: string; startDate: string; endDate?: string | null; rentAmount: string; depositAmount: string; status: string; contractUrl?: string | null };
 export type ApiPayment = { id: string; leaseId: string; amount: string; paymentMethod: string; transactionRef?: string | null; status: string; paidAt?: string | null; receiptUrl?: string | null; createdAt: string };
