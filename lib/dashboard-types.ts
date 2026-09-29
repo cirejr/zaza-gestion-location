@@ -12,3 +12,16 @@ export type PaymentRow = { payment: ApiPayment; apartment: { id: string; unitNum
 export type LeaseRow = { lease: ApiLease; apartment: ApiApartment; building: ApiBuilding; tenant: ApiTenant };
 export type TicketRow = { ticket: ApiTicket; building: ApiBuilding; apartment?: ApiApartment | null };
 export type UtilityRow = ApiUtility & { building?: ApiBuilding | null };
+export type PortalUtilityNote = { id: string; type: string; period: string; amount: string; unitNumber: string; sentAt?: string | null };
+export type PortalMe = {
+  data: {
+    tenant: ApiTenant & { userId?: string | null };
+    building: Pick<ApiBuilding, "id" | "name" | "city"> | null;
+    apartment: ApiApartment | null;
+    lease: ApiLease | null;
+    pendingPayments: ApiPayment[];
+    paymentHistory: ApiPayment[];
+    utilityNotes: PortalUtilityNote[];
+    stats: { totalDue: number; paidCount: number; paidTotal: number };
+  };
+};

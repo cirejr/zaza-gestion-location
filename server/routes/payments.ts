@@ -4,7 +4,7 @@ import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { apartments, buildings, leases, payments, tenants } from "@/db/schema";
-import { createPaymentLink, type PaymentProviderName } from "@/lib/payment-providers";
+import { createPaymentLink, PaymentProviderError, type PaymentProviderName } from "@/lib/payment-providers";
 import { createReceiptPdf } from "@/lib/pdf";
 import { buildingAccessCondition, getBuildingForActor, requireActor, requireRole } from "@/server/lib/auth-context";
 import { pagination, parseBody, parseUuid, countValue } from "@/server/lib/http";
@@ -170,6 +170,25 @@ router.get("/payments/:id/receipt.pdf", async (c) => {
 });
 
 router.post("/webhooks/payments/:provider", async (c) => {
+  const provider = c.req.param("provider");
+
+  // PayTech calls the IPN URL as a form POST (`type_event`, `ref_command`,
+  // `custom_field`, …). Map its lifecycle events onto payment statuses.
+  if (provider === "paytech") {
+    const form = await c.req.parseBody();
+    const ref = String(form.ref_command ?? "");
+    if (!ref) throw new HTTPException(400, { message: "Missing ref_command." });
+    const event = String(form.type_event ?? "");
+    const status: "pending" | "paid" | "failed" | "refunded" = event === "sale_complete" ? "paid" : event === "sale_canceled" ? "failed" : event === "sale_refunded" ? "refunded" : "pending";
+    const db = getDb();
+    const [payment] = await db.update(payments).set({
+      status,
+      ...(status === "paid" ? { paidAt: new Date() } : {}),
+    }).where(eq(payments.transactionRef, ref)).returning();
+    if (!payment) throw new HTTPException(404, { message: "Payment transaction not found." });
+    return c.json({ received: true, paymentId: payment.id, status });
+  }
+
   const expectedSecret = process.env.PAYMENT_WEBHOOK_SECRET;
   if (expectedSecret && c.req.header("x-webhook-secret") !== expectedSecret) {
     throw new HTTPException(401, { message: "Invalid webhook signature." });
@@ -196,15 +215,26 @@ router.post("/payments/:id/create-link", async (c) => {
   const context = await getPaymentContext(id, actor);
   if (context.payment.status === "paid") throw new HTTPException(409, { message: "This payment is already settled." });
   const baseUrl = process.env.APP_URL ?? process.env.BETTER_AUTH_URL ?? new URL(c.req.url).origin;
-  const link = await createPaymentLink(provider as PaymentProviderName, {
-    amount: Number(context.payment.amount),
-    reference: `NAYA-${id}`,
-    customerName: context.tenant.fullName,
-    customerPhone: context.tenant.whatsappNumber ?? context.tenant.phone,
-    returnUrl: `${baseUrl}/payments/${id}/return`,
-    notificationUrl: `${baseUrl}/api/webhooks/payments/${provider}`,
-  });
-  await getDb().update(payments).set({ transactionRef: link.token, status: "pending" }).where(eq(payments.id, id));
+  const reference = `NAYA-${id}`;
+  let link: Awaited<ReturnType<typeof createPaymentLink>>;
+  try {
+    link = await createPaymentLink(provider as PaymentProviderName, {
+      amount: Number(context.payment.amount),
+      reference,
+      customerName: context.tenant.fullName,
+      customerPhone: context.tenant.whatsappNumber ?? context.tenant.phone,
+      returnUrl: `${baseUrl}/payments/${id}/return`,
+      notificationUrl: `${baseUrl}/api/webhooks/payments/${provider}`,
+    });
+  } catch (error) {
+    if (error instanceof PaymentProviderError) {
+      throw new HTTPException(503, { message: error.message });
+    }
+    throw error;
+  }
+  // Store the deterministic reference so provider IPNs (which echo
+  // `ref_command`) can be matched by the webhook.
+  await getDb().update(payments).set({ transactionRef: reference, status: "pending" }).where(eq(payments.id, id));
   return c.json({ data: link });
 });
 

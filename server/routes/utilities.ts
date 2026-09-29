@@ -4,7 +4,7 @@ import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { apartments, buildings, commonUtilities, leases, tenants, utilitySplits } from "@/db/schema";
-import { sendWhatsAppMessage } from "@/lib/notifications";
+import { sendUtilityNotice } from "@/lib/notifications";
 import { splitCommonCharge } from "@/lib/utility-split";
 import { getBuildingForActor, requireActor, requireRole } from "@/server/lib/auth-context";
 import { pagination, parseBody, parseUuid, countValue } from "@/server/lib/http";
@@ -153,9 +153,13 @@ router.post("/utilities/:id/notify", async (c) => {
   const results = [] as Array<{ apartmentId: string; delivered: boolean; messageId: string }>;
   for (const row of rows) {
     const phone = row.tenant.whatsappNumber ?? row.tenant.phone;
-    const result = await sendWhatsAppMessage({
+    const result = await sendUtilityNotice({
       to: phone,
-      message: `Bonjour ${row.tenant.fullName}, note ${utility.type} ${utility.period} : ${Number(row.split.amount).toLocaleString("fr-FR")} FCFA pour ${row.apartment.unitNumber}. Merci.`,
+      tenantName: row.tenant.fullName,
+      type: utility.type,
+      period: utility.period,
+      amount: Number(row.split.amount),
+      unitNumber: row.apartment.unitNumber,
     });
     await db.update(utilitySplits).set({ sentAt: new Date() }).where(eq(utilitySplits.id, row.split.id));
     results.push({ apartmentId: row.apartment.id, delivered: result.delivered, messageId: result.messageId });

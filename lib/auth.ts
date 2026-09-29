@@ -3,7 +3,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { phoneNumber } from "better-auth/plugins";
 import { getDb } from "@/db";
 import { authAccounts, authSessions, authUsers, authVerifications } from "@/db/schema";
-import { sendSmsMessage } from "@/lib/notifications";
+import { sendOtpCode, sendSmsMessage } from "@/lib/notifications";
 
 /**
  * Auth is intentionally kept behind a factory: the UI can be previewed without
@@ -43,9 +43,14 @@ export function createAuth() {
         otpLength: 6,
         requireVerification: true,
         sendOTP: async ({ phoneNumber: phone, code }) => {
-          // The delivery adapter is shared with the rent reminder flow. In
-          // production Twilio/Green API credentials are supplied by env vars.
-          await sendSmsMessage({ to: phone, message: `Votre code Naya est : ${code}. Il expire dans 5 minutes.` });
+          // OTP delivery prefers the WhatsApp authentication template
+          // (`naya_otp`). SMS is only a fallback when Meta is not configured.
+          const whatsapp = await sendOtpCode({ to: phone, code });
+          if (whatsapp.delivered) return;
+          const sms = await sendSmsMessage({ to: phone, message: `Votre code Naya est : ${code}. Il expire dans 5 minutes.` });
+          if (!sms.delivered) {
+            throw new Error("Aucun canal de livraison du code configuré (Meta WhatsApp ou SMS).");
+          }
         },
       }),
     ],

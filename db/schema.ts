@@ -122,6 +122,9 @@ export const tenants = pgTable("tenants", {
   phone: varchar("phone", { length: 32 }).notNull(),
   whatsappNumber: varchar("whatsapp_number", { length: 32 }),
   identityDocUrl: text("identity_doc_url"),
+  // Linked to the Better Auth account used to log into the tenant portal.
+  // Self-linked on first portal access via phone match.
+  userId: text("user_id").references(() => authUsers.id, { onDelete: "set null" }).unique(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

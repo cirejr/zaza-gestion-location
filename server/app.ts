@@ -9,6 +9,7 @@ import buildingsRoutes from "@/server/routes/buildings";
 import leasesRoutes from "@/server/routes/leases";
 import notificationsRoutes from "@/server/routes/notifications";
 import paymentsRoutes from "@/server/routes/payments";
+import portalRoutes from "@/server/routes/portal";
 import reportsRoutes from "@/server/routes/reports";
 import tenantsRoutes from "@/server/routes/tenants";
 import ticketsRoutes from "@/server/routes/tickets";
@@ -28,7 +29,7 @@ app.all("/auth/*", (c) => auth.handler(c.req.raw));
 
 app.get("/me", sessionMiddleware, (c) => c.json({ session: c.get("session") }));
 
-for (const path of ["/buildings", "/apartments", "/tenants", "/leases", "/payments", "/utilities", "/tickets", "/reports", "/notifications", "/users", "/uploads"]) {
+for (const path of ["/buildings", "/apartments", "/tenants", "/leases", "/payments", "/utilities", "/tickets", "/reports", "/notifications", "/users", "/uploads", "/portal"]) {
   app.use(path, sessionMiddleware, requireSession);
   app.use(`${path}/*`, sessionMiddleware, requireSession);
 }
@@ -50,6 +51,7 @@ app.route("/", apartmentsRoutes);
 app.route("/", tenantsRoutes);
 app.route("/", leasesRoutes);
 app.route("/", paymentsRoutes);
+app.route("/", portalRoutes);
 app.route("/", utilitiesRoutes);
 app.route("/", ticketsRoutes);
 app.route("/", notificationsRoutes);

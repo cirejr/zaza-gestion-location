@@ -17,6 +17,11 @@ export async function requireActor(c: RequestContext): Promise<DomainUser> {
   const session = c.get("session");
   if (!session) throw new HTTPException(401, { message: "Authentication required." });
 
+  // Phone-only accounts (verified by SMS/WhatsApp OTP) have no email on the
+  // Better Auth user and use the tenant portal instead of the dashboard.
+  if (!session.user.email) {
+    throw new HTTPException(403, { message: "Ce compte n’a pas d’adresse email. Utilisez l’espace locataire." });
+  }
   const email = session.user.email.toLowerCase();
   const db = getDb();
   const [existing] = await db.select().from(users).where(eq(users.email, email)).limit(1);
