@@ -3,11 +3,11 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { DataTable } from "@/components/ui/data-table";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { CreateApartmentDialog } from "@/components/dashboard/create-apartment-dialog";
 import { PageHeader } from "@/components/dashboard/page-header";
-import { StatusBadge } from "@/components/dashboard/status-badge";
+import { apartmentColumns } from "./columns";
 import { serverApiFetch } from "@/lib/server-api";
 import { requireDashboardUser } from "@/lib/dashboard-guard";
 import type { ApiApartment, ApiBuilding, ApiList } from "@/lib/dashboard-types";
@@ -59,30 +59,7 @@ export default async function BuildingDetailPage({ params, searchParams }: { par
         </CardHeader>
         <CardContent className="px-0">
           {response.data.length ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Unité</TableHead>
-                  <TableHead>Étage</TableHead>
-                  <TableHead>Pièces</TableHead>
-                  <TableHead>Surface</TableHead>
-                  <TableHead>Loyer</TableHead>
-                  <TableHead>Statut</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {response.data.map((apartment) => (
-                  <TableRow key={apartment.id}>
-                    <TableCell className="text-sm font-semibold">{apartment.unitNumber}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{apartment.floor != null ? `${apartment.floor}` : "—"}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{apartment.bedrooms}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{apartment.areaSqm ? `${apartment.areaSqm} m²` : "—"}</TableCell>
-                    <TableCell className="text-sm font-bold">{formatCfa(apartment.rentAmount)}</TableCell>
-                    <TableCell><StatusBadge status={apartment.status} /></TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <DataTable columns={apartmentColumns} data={response.data} />
           ) : (
             <Empty className="border">
               <EmptyMedia variant="icon"><Building2 /></EmptyMedia>

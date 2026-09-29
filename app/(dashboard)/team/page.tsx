@@ -1,13 +1,11 @@
 import { UsersRound } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { RoleSelect } from "@/components/dashboard/role-select";
-import { StatusBadge } from "@/components/dashboard/status-badge";
+import { DataTable } from "@/components/ui/data-table";
 import { PageHeader } from "@/components/dashboard/page-header";
+import { teamColumns } from "./columns";
 import { requireDashboardUser } from "@/lib/dashboard-guard";
 import { ServerApiError, serverApiFetch } from "@/lib/server-api";
 import type { ApiList, ApiUser } from "@/lib/dashboard-types";
-import { initials } from "@/lib/dashboard-utils";
 
 export const dynamic = "force-dynamic";
 
@@ -45,33 +43,7 @@ export default async function TeamPage() {
             <span className="flex size-9 items-center justify-center rounded-xl bg-secondary text-secondary-foreground"><UsersRound /></span>
           </CardHeader>
           <CardContent className="px-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Membre</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Rôle</TableHead>
-                  <TableHead className="text-right">Modifier</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {users.map((user) => (
-                  <TableRow key={user.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <span className="flex size-8 items-center justify-center rounded-full bg-secondary text-[10px] font-bold">{initials(user.name)}</span>
-                        <span className="text-sm font-semibold">{user.name}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{user.email}</TableCell>
-                    <TableCell>
-                      <StatusBadge status={user.role} />
-                    </TableCell>
-                    <TableCell className="text-right"><RoleSelect user={user} /></TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <DataTable columns={teamColumns} data={users} emptyMessage="Aucun membre dans l’équipe." />
           </CardContent>
         </Card>
       )}

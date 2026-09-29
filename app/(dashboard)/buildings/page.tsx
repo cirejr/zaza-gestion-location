@@ -3,13 +3,13 @@ import { Building2, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { DataTable } from "@/components/ui/data-table";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Separator } from "@/components/ui/separator";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { CreateBuildingDialog } from "@/components/dashboard/create-building-dialog";
 import { ListControls } from "@/components/dashboard/list-controls";
 import { PageHeader } from "@/components/dashboard/page-header";
-import { StatusBadge } from "@/components/dashboard/status-badge";
+import { unitOverviewColumns } from "./columns";
 import { serverApiFetch } from "@/lib/server-api";
 import { requireDashboardUser } from "@/lib/dashboard-guard";
 import type { ApiBuildingOverview, ApiList } from "@/lib/dashboard-types";
@@ -85,26 +85,11 @@ export default async function BuildingsPage({ searchParams }: { searchParams: Pr
           <CardDescription>Statuts et loyers des appartements.</CardDescription>
         </CardHeader>
         <CardContent className="px-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Unité</TableHead>
-                <TableHead>Immeuble</TableHead>
-                <TableHead>Loyer mensuel</TableHead>
-                <TableHead>Statut</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {apartmentGroups.flatMap(({ building, apartments }) => apartments.map((apartment) => (
-                <TableRow key={apartment.id}>
-                  <TableCell className="text-sm font-semibold">{apartment.unitNumber}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{building.name}</TableCell>
-                  <TableCell className="text-xs font-semibold">{formatCfa(apartment.rentAmount)}</TableCell>
-                  <TableCell><StatusBadge status={apartment.status} /></TableCell>
-                </TableRow>
-              )))}
-            </TableBody>
-          </Table>
+          <DataTable
+            columns={unitOverviewColumns}
+            data={apartmentGroups.flatMap(({ building, apartments }) => apartments.map((apartment) => ({ apartment, building })))}
+            emptyMessage="Ajoutez des unités dans vos immeubles pour les voir ici."
+          />
         </CardContent>
       </Card>
     </div>

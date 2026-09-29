@@ -1,14 +1,12 @@
-import { Download, FileText } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DataTable } from "@/components/ui/data-table";
 import { CreateLeaseDialog } from "@/components/dashboard/create-lease-dialog";
 import { PageHeader } from "@/components/dashboard/page-header";
-import { StatusBadge } from "@/components/dashboard/status-badge";
+import { leaseColumns } from "./columns";
 import { serverApiFetch } from "@/lib/server-api";
 import { requireDashboardUser } from "@/lib/dashboard-guard";
 import type { ApiApartment, ApiList, ApiTenant, LeaseRow } from "@/lib/dashboard-types";
-import { formatCfa, formatDate } from "@/lib/dashboard-utils";
+import { formatCfa } from "@/lib/dashboard-utils";
 
 /** Apartment rows returned by the purpose-built `/api/leases/options` route. */
 type LeaseOptionApartment = ApiApartment & { buildingName: string };
@@ -42,39 +40,7 @@ export default async function LeasesPage() {
           <CardDescription>{response.data.length} bail(s) dans votre portefeuille.</CardDescription>
         </CardHeader>
         <CardContent className="px-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Contrat</TableHead>
-                <TableHead>Locataire</TableHead>
-                <TableHead>Période</TableHead>
-                <TableHead>Caution</TableHead>
-                <TableHead>Statut</TableHead>
-                <TableHead className="text-right">Document</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {response.data.length ? response.data.map((row) => (
-                <TableRow key={row.lease.id}>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <span className="flex size-8 items-center justify-center rounded-lg bg-secondary text-secondary-foreground"><FileText /></span>
-                      <span className="text-xs font-semibold">{row.apartment.unitNumber}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-sm font-medium">{row.tenant.fullName}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{formatDate(row.lease.startDate)}{row.lease.endDate ? ` → ${formatDate(row.lease.endDate)}` : ""}</TableCell>
-                  <TableCell className="text-xs font-semibold">{formatCfa(row.lease.depositAmount)}</TableCell>
-                  <TableCell><StatusBadge status={row.lease.status} /></TableCell>
-                  <TableCell className="text-right">
-                    <Button render={<a href={`/api/leases/${row.lease.id}/contract.pdf`} target="_blank" rel="noreferrer" />} variant="ghost" size="icon-sm" aria-label="Télécharger le contrat"><Download /></Button>
-                  </TableCell>
-                </TableRow>
-              )) : (
-                <TableRow><TableCell colSpan={6} className="h-32 text-center text-sm text-muted-foreground">Aucun bail enregistré.</TableCell></TableRow>
-              )}
-            </TableBody>
-          </Table>
+          <DataTable columns={leaseColumns} data={response.data} emptyMessage="Aucun bail enregistré." />
         </CardContent>
       </Card>
     </div>

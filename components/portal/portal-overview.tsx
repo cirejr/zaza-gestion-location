@@ -1,19 +1,12 @@
-import { Download, Droplets, FileText, Home, ReceiptText, WalletCards } from "lucide-react";
+import { Droplets, FileText, Home, ReceiptText, WalletCards } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { PayNowButton } from "@/components/portal/pay-now-button";
+import { DataTable } from "@/components/ui/data-table";
 import { PortalSignOut } from "@/components/portal/portal-sign-out";
-import { StatusBadge } from "@/components/dashboard/status-badge";
+import { pendingPaymentColumns, paymentHistoryColumns, utilityNoteColumns } from "@/components/portal/portal-columns";
 import { ServerApiError, serverApiFetch } from "@/lib/server-api";
 import type { PortalMe } from "@/lib/dashboard-types";
 import { formatCfa, formatDate } from "@/lib/dashboard-utils";
-
-function utilityLabel(type: string) {
-  const labels: Record<string, string> = { water: "Eau", electricity: "Électricité", security: "Sécurité", other: "Autres charges" };
-  return labels[type] ?? type;
-}
 
 function UnlinkedState({ message }: { message: string }) {
   return (
@@ -70,28 +63,7 @@ export async function PortalOverview() {
             <CardDescription>{pendingPayments.length} paiement(s) à régler{lease ? ` pour ${apartment?.unitNumber}` : ""}.</CardDescription>
           </CardHeader>
           <CardContent className="px-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Échéance</TableHead>
-                  <TableHead>Montant</TableHead>
-                  <TableHead>Statut</TableHead>
-                  <TableHead className="text-right">Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {pendingPayments.map((payment) => (
-                  <TableRow key={payment.id}>
-                    <TableCell className="text-xs text-muted-foreground">{formatDate(payment.createdAt)}</TableCell>
-                    <TableCell className="text-sm font-bold">{formatCfa(payment.amount)}</TableCell>
-                    <TableCell><StatusBadge status="pending" /></TableCell>
-                    <TableCell className="text-right">
-                      <PayNowButton paymentId={payment.id} amount={formatCfa(payment.amount)} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <DataTable columns={pendingPaymentColumns} data={pendingPayments} />
           </CardContent>
         </Card>
       )}
@@ -129,24 +101,7 @@ export async function PortalOverview() {
           </CardHeader>
           <CardContent className="px-0">
             {utilityNotes.length ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Charge</TableHead>
-                    <TableHead>Période</TableHead>
-                    <TableHead>Montant</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {utilityNotes.map((note) => (
-                    <TableRow key={note.id}>
-                      <TableCell className="text-sm font-medium">{utilityLabel(note.type)}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{note.period}</TableCell>
-                      <TableCell className="text-sm font-semibold">{formatCfa(note.amount)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <DataTable columns={utilityNoteColumns} data={utilityNotes} />
             ) : (
               <p className="px-6 pb-6 text-sm text-muted-foreground">Aucune note de charges pour le moment.</p>
             )}
@@ -161,34 +116,7 @@ export async function PortalOverview() {
         </CardHeader>
         <CardContent className="px-0">
           {paymentHistory.length ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Montant</TableHead>
-                  <TableHead>Moyen</TableHead>
-                  <TableHead>Statut</TableHead>
-                  <TableHead className="text-right">Reçu</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {paymentHistory.map((payment) => (
-                  <TableRow key={payment.id}>
-                    <TableCell className="text-xs text-muted-foreground">{formatDate(payment.paidAt ?? payment.createdAt)}</TableCell>
-                    <TableCell className="text-sm font-bold">{formatCfa(payment.amount)}</TableCell>
-                    <TableCell className="text-xs">{payment.paymentMethod}</TableCell>
-                    <TableCell><StatusBadge status={payment.status} /></TableCell>
-                    <TableCell className="text-right">
-                      {payment.status === "paid" && (
-                        <Button render={<a href={`/api/portal/payments/${payment.id}/receipt.pdf`} target="_blank" rel="noreferrer" />} variant="ghost" size="icon-sm" aria-label="Télécharger le reçu">
-                          <Download />
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <DataTable columns={paymentHistoryColumns} data={paymentHistory} />
           ) : (
             <p className="px-6 pb-6 text-sm text-muted-foreground">Aucun paiement enregistré.</p>
           )}

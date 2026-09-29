@@ -1,14 +1,12 @@
-import { MessageCircle, UserRound } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DataTable } from "@/components/ui/data-table";
 import { CreateDialog, type DialogField } from "@/components/dashboard/create-dialog";
 import { ListControls } from "@/components/dashboard/list-controls";
 import { PageHeader } from "@/components/dashboard/page-header";
-import { StatusBadge } from "@/components/dashboard/status-badge";
+import { tenantColumns } from "./columns";
 import { serverApiFetch } from "@/lib/server-api";
 import { requireDashboardUser } from "@/lib/dashboard-guard";
 import type { TenantOverviewResponse } from "@/lib/dashboard-types";
-import { formatDate, initials } from "@/lib/dashboard-utils";
 
 export const dynamic = "force-dynamic";
 
@@ -53,57 +51,7 @@ export default async function TenantsPage({ searchParams }: { searchParams: Prom
           <CardDescription>{total} locataire(s) enregistré(s).</CardDescription>
         </CardHeader>
         <CardContent className="px-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Locataire</TableHead>
-                <TableHead>Contact</TableHead>
-                <TableHead>Unité / bail</TableHead>
-                <TableHead>Statut</TableHead>
-                <TableHead className="text-right">Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {response.data.length ? response.data.map((tenant) => {
-                const lease = tenant.lease;
-                return (
-                  <TableRow key={tenant.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <span className="flex size-8 items-center justify-center rounded-full bg-secondary text-[10px] font-bold">{initials(tenant.fullName)}</span>
-                        <span className="text-sm font-semibold">{tenant.fullName}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{tenant.whatsappNumber ?? tenant.phone}</TableCell>
-                    <TableCell className="text-xs">
-                      {lease ? (
-                        <>
-                          <span className="font-semibold">{lease.apartment.unitNumber}</span>
-                          <span className="block text-muted-foreground">{formatDate(lease.lease.startDate)}{lease.lease.endDate ? ` → ${formatDate(lease.lease.endDate)}` : ""}</span>
-                        </>
-                      ) : (
-                        <span className="text-muted-foreground">Aucun bail</span>
-                      )}
-                    </TableCell>
-                    <TableCell><StatusBadge status={lease?.lease.status ?? "vacant"} /></TableCell>
-                    <TableCell className="text-right">
-                      <a
-                        href={`https://wa.me/${(tenant.whatsappNumber ?? tenant.phone).replace(/[^0-9]/g, "")}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex h-8 items-center justify-center gap-1 rounded-lg px-2 text-xs font-medium text-foreground hover:bg-muted"
-                        aria-label={`Contacter ${tenant.fullName} sur WhatsApp`}
-                      >
-                        <MessageCircle /> WhatsApp
-                      </a>
-                    </TableCell>
-                  </TableRow>
-                );
-              }) : (
-                <TableRow><TableCell colSpan={5} className="h-32 text-center text-sm text-muted-foreground">Aucun locataire enregistré.</TableCell></TableRow>
-              )}
-            </TableBody>
-          </Table>
+          <DataTable columns={tenantColumns} data={response.data} emptyMessage="Aucun locataire enregistré." />
         </CardContent>
       </Card>
       <div className="grid gap-4 sm:grid-cols-3">
