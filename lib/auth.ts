@@ -4,6 +4,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { phoneNumber } from "better-auth/plugins";
 import { getDb } from "@/db";
 import { authAccounts, authSessions, authUsers, authVerifications } from "@/db/schema";
+import { resetPasswordEmail, sendEmail } from "@/lib/email";
 import { sendOtpCode, sendSmsMessage, type NotificationResult } from "@/lib/notifications";
 
 /**
@@ -32,6 +33,13 @@ export function createAuth() {
     trustedOrigins: [appUrl],
     emailAndPassword: {
       enabled: true,
+      // Reset links expire after an hour; delivery is best-effort so a missing
+      // Resend key never blocks the request (the link is logged instead).
+      resetPasswordTokenExpiresIn: 60 * 60,
+      sendResetPassword: async ({ user, url }) => {
+        const message = resetPasswordEmail(url);
+        await sendEmail({ to: user.email, ...message });
+      },
     },
     socialProviders: {
       google: {

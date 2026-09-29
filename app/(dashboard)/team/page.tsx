@@ -3,11 +3,13 @@ import { UsersRound } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { InviteMemberDialog } from "@/components/dashboard/invite-member-dialog";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { teamColumns } from "./columns";
+import { invitationColumns } from "./invitation-columns";
 import { requireDashboardUser } from "@/lib/dashboard-guard";
 import { ServerApiError, serverApiFetch } from "@/lib/server-api";
-import type { ApiList, ApiUser } from "@/lib/dashboard-types";
+import type { ApiInvitation, ApiList, ApiUser } from "@/lib/dashboard-types";
 
 export const dynamic = "force-dynamic";
 
@@ -16,22 +18,42 @@ export default async function TeamPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader eyebrow="Administration" title="Équipe" description="Attribuez les rôles propriétaire, gérant ou locataire." />
+      <PageHeader
+        eyebrow="Administration"
+        title="Équipe"
+        description="Attribuez les rôles propriétaire, gérant ou locataire."
+        action={<InviteMemberDialog />}
+      />
       <Suspense fallback={
-        <Card>
-          <CardHeader className="flex-row items-center justify-between space-y-0">
-            <div className="flex flex-col gap-2">
-              <CardDescription><Skeleton className="h-3 w-16" /></CardDescription>
-              <CardTitle><Skeleton className="h-6 w-24" /></CardTitle>
-            </div>
-            <Skeleton className="size-9 rounded-xl" />
-          </CardHeader>
-          <CardContent className="px-0">
-            <div className="flex flex-col gap-3 px-6 py-4">
-              {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-9 w-full" />)}
-            </div>
-          </CardContent>
-        </Card>
+        <>
+          <Card>
+            <CardHeader className="flex-row items-center justify-between space-y-0">
+              <div className="flex flex-col gap-2">
+                <CardDescription><Skeleton className="h-3 w-16" /></CardDescription>
+                <CardTitle><Skeleton className="h-6 w-24" /></CardTitle>
+              </div>
+              <Skeleton className="size-9 rounded-xl" />
+            </CardHeader>
+            <CardContent className="px-0">
+              <div className="flex flex-col gap-3 px-6 py-4">
+                {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-9 w-full" />)}
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex-row items-center justify-between space-y-0">
+              <div className="flex flex-col gap-2">
+                <CardDescription><Skeleton className="h-3 w-20" /></CardDescription>
+                <CardTitle><Skeleton className="h-6 w-24" /></CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="px-0">
+              <div className="flex flex-col gap-3 px-6 py-4">
+                {Array.from({ length: 2 }).map((_, index) => <Skeleton key={index} className="h-9 w-full" />)}
+              </div>
+            </CardContent>
+          </Card>
+        </>
       }>
         <TeamSection />
       </Suspense>
@@ -63,18 +85,32 @@ async function TeamSection() {
     );
   }
 
+  const invitationsResponse = await serverApiFetch<ApiList<ApiInvitation>>("/api/users/invitations");
+  const invitations = invitationsResponse.data;
+
   return (
-    <Card>
-      <CardHeader className="flex-row items-center justify-between space-y-0">
-        <div>
-          <CardDescription>Comptes</CardDescription>
-          <CardTitle>{users.length} membre(s)</CardTitle>
-        </div>
-        <span className="flex size-9 items-center justify-center rounded-xl bg-secondary text-secondary-foreground"><UsersRound /></span>
-      </CardHeader>
-      <CardContent className="px-0">
-        <DataTable columns={teamColumns} data={users} emptyMessage="Aucun membre dans l’équipe." />
-      </CardContent>
-    </Card>
+    <>
+      <Card>
+        <CardHeader className="flex-row items-center justify-between space-y-0">
+          <div>
+            <CardDescription>Comptes</CardDescription>
+            <CardTitle>{users.length} membre(s)</CardTitle>
+          </div>
+          <span className="flex size-9 items-center justify-center rounded-xl bg-secondary text-secondary-foreground"><UsersRound /></span>
+        </CardHeader>
+        <CardContent className="px-0">
+          <DataTable columns={teamColumns} data={users} emptyMessage="Aucun membre dans l’équipe." />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardDescription>Invitations</CardDescription>
+          <CardTitle>{invitations.length} en attente</CardTitle>
+        </CardHeader>
+        <CardContent className="px-0">
+          <DataTable columns={invitationColumns} data={invitations} emptyMessage="Aucune invitation en attente." />
+        </CardContent>
+      </Card>
+    </>
   );
 }

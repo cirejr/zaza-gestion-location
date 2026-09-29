@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   Activity,
-  Bell,
   Building2,
   ClipboardList,
   FileText,
@@ -26,6 +25,7 @@ import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 import type { ApiUser } from "@/lib/dashboard-types";
 import { CommandPalette, type CommandItem } from "@/components/dashboard/command-palette";
+import { NotificationBell } from "@/components/dashboard/notification-bell";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -181,7 +181,7 @@ export function DashboardShell({ user, children }: { user: ApiUser; children: Re
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="icon" aria-label="Rechercher" title="Rechercher (⌘K)" onClick={() => setCommandOpen(true)}><span className="text-xs">⌘K</span></Button>
-            <Button variant="outline" size="icon" className="relative" aria-label="Notifications"><Bell /><span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-destructive" /></Button>
+            <NotificationBell />
             <Separator orientation="vertical" className="mx-1 hidden h-6 sm:block" />
             <DropdownMenu>
               <DropdownMenuTrigger render={<Button variant="ghost" className="gap-2 px-2" />}>

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { getDb } from "@/db";
 import { apartments, buildings, maintenanceTickets } from "@/db/schema";
 import { getBuildingForActor, requireActor, requireRole } from "@/server/lib/auth-context";
+import { notifyBuildingTeam } from "@/server/lib/notify";
 import { pagination, parseBody, parseUuid, countValue } from "@/server/lib/http";
 import type { ApiEnv } from "@/server/session-middleware";
 
@@ -76,7 +77,7 @@ router.post("/tickets", async (c) => {
   const actor = await requireActor(c);
   requireRole(actor, ["owner", "manager"]);
   const data = await parseBody(c, ticketInput);
-  await getBuildingForActor(data.buildingId, actor);
+  const building = await getBuildingForActor(data.buildingId, actor);
   const db = getDb();
   if (data.apartmentId) {
     const [apartment] = await db.select().from(apartments).where(eq(apartments.id, data.apartmentId)).limit(1);
@@ -90,6 +91,13 @@ router.post("/tickets", async (c) => {
     assignedTo: data.assignedTo ?? null,
     reportedBy: actor.id,
   }).returning();
+  await notifyBuildingTeam(building, {
+    type: "ticket.created",
+    title: `Nouvel incident : ${data.title}`,
+    body: building.name,
+    href: "/tickets",
+    exclude: actor.id,
+  });
   return c.json({ data: ticket }, 201);
 });
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { Link2, Send } from "lucide-react";
+import { Link2, Pencil, Send, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -11,6 +11,8 @@ import { Spinner } from "@/components/ui/spinner";
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   link2: Link2,
   send: Send,
+  trash: Trash2,
+  pencil: Pencil,
 };
 
 export function RowAction({

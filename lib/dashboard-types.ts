@@ -9,6 +9,14 @@ export type ApiLease = { id: string; apartmentId: string; tenantId: string; star
 export type ApiPayment = { id: string; leaseId: string; amount: string; paymentMethod: string; transactionRef?: string | null; status: string; paidAt?: string | null; receiptUrl?: string | null; createdAt: string };
 export type ApiUtility = { id: string; buildingId: string; type: string; supplier?: string | null; totalAmount: string; period: string; splitStatus: string; invoiceUrl?: string | null; createdAt: string };
 export type ApiTicket = { id: string; buildingId: string; apartmentId?: string | null; title: string; description: string; cost?: string | null; status: string; priority: string; createdAt: string };
+export type ApiInvitation = {
+  id: string;
+  email: string;
+  role: "owner" | "manager" | "tenant";
+  status: "pending" | "accepted" | "revoked";
+  createdAt: string;
+  expiresAt: string;
+};
 export type ApiReport = { period: string; collected: number; charges: number; net: number; paymentCount: number; utilityCount: number; unitCount: number; occupied: number; occupancyRate: number };
 export type PaymentSummary = { collected: number; paidCount: number; total: number; receiptCount: number };
 export type TicketSummary = { pending: number; inProgress: number; resolved: number };

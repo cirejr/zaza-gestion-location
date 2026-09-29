@@ -7,6 +7,7 @@ import { apartments, buildings, leases, payments, tenants } from "@/db/schema";
 import { createPaymentLink, PaymentProviderError, type PaymentProviderName } from "@/lib/payment-providers";
 import { createReceiptPdf } from "@/lib/pdf";
 import { buildingAccessCondition, getBuildingForActor, requireActor, requireRole } from "@/server/lib/auth-context";
+import { notifyBuildingTeam } from "@/server/lib/notify";
 import { pagination, parseBody, parseUuid, countValue } from "@/server/lib/http";
 import type { ApiEnv } from "@/server/session-middleware";
 
@@ -48,6 +49,36 @@ async function getPaymentContext(id: string, actor: Awaited<ReturnType<typeof re
     throw new HTTPException(403, { message: "You cannot access this payment." });
   }
   return row as PaymentContext;
+}
+
+/**
+ * Inbox notification for a settled online payment. IPNs have no acting user, so
+ * the whole building team is notified. Best-effort: a notification failure must
+ * not turn a successful payment update into a webhook error.
+ */
+async function notifyPaymentReceived(paymentId: string, status: string) {
+  if (status !== "paid") return;
+  try {
+    const db = getDb();
+    const [row] = await db
+      .select({ payment: payments, apartment: apartments, building: buildings, tenant: tenants })
+      .from(payments)
+      .innerJoin(leases, eq(payments.leaseId, leases.id))
+      .innerJoin(apartments, eq(leases.apartmentId, apartments.id))
+      .innerJoin(buildings, eq(apartments.buildingId, buildings.id))
+      .innerJoin(tenants, eq(leases.tenantId, tenants.id))
+      .where(eq(payments.id, paymentId))
+      .limit(1);
+    if (!row) return;
+    await notifyBuildingTeam(row.building, {
+      type: "payment.received",
+      title: `Paiement reçu — ${row.building.name} · ${row.apartment.unitNumber}`,
+      body: `${row.tenant.fullName} · ${Number(row.payment.amount).toLocaleString("fr-FR")} FCFA`,
+      href: "/payments",
+    });
+  } catch (error) {
+    console.error("payment notification failed", error);
+  }
 }
 
 router.get("/payments", async (c) => {
@@ -222,6 +253,7 @@ router.post("/webhooks/payments/:provider", async (c) => {
       ...(status === "paid" ? { paidAt: new Date() } : {}),
     }).where(eq(payments.transactionRef, ref)).returning();
     if (!payment) throw new HTTPException(404, { message: "Payment transaction not found." });
+    await notifyPaymentReceived(payment.id, status);
     return c.json({ received: true, paymentId: payment.id, status });
   }
 
@@ -240,6 +272,7 @@ router.post("/webhooks/payments/:provider", async (c) => {
     ...(data.status === "paid" ? { paidAt: data.paidAt ?? new Date() } : {}),
   }).where(eq(payments.transactionRef, data.transactionRef)).returning();
   if (!payment) throw new HTTPException(404, { message: "Payment transaction not found." });
+  await notifyPaymentReceived(payment.id, payment.status);
   return c.json({ received: true, paymentId: payment.id, status: payment.status });
 });
 

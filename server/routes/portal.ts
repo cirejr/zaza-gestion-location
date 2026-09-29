@@ -6,6 +6,7 @@ import { getDb } from "@/db";
 import { apartments, buildings, commonUtilities, leases, payments, tenants, utilitySplits } from "@/db/schema";
 import { createPaymentLink, PaymentProviderError, type PaymentProviderName } from "@/lib/payment-providers";
 import { createReceiptPdf } from "@/lib/pdf";
+import { notifyBuildingTeam } from "@/server/lib/notify";
 import { resolvePortalTenant } from "@/server/lib/tenant-auth";
 import { parseBody, parseUuid } from "@/server/lib/http";
 import type { ApiEnv } from "@/server/session-middleware";
@@ -98,7 +99,7 @@ router.post("/portal/payments/:id/create-link", async (c) => {
   const tenant = await resolvePortalTenant(c);
   const id = parseUuid(c.req.param("id"), "payment id");
   const { provider } = await parseBody(c, z.object({ provider: z.enum(["paytech", "paydunya", "fedapay"]) }));
-  const { payment } = await getOwnedPayment(id, tenant.id);
+  const { payment, building, apartment } = await getOwnedPayment(id, tenant.id);
   if (payment.status === "paid") throw new HTTPException(409, { message: "Ce paiement est déjà réglé." });
 
   const baseUrl = process.env.APP_URL ?? process.env.BETTER_AUTH_URL ?? new URL(c.req.url).origin;
@@ -120,6 +121,12 @@ router.post("/portal/payments/:id/create-link", async (c) => {
     throw error;
   }
   await getDb().update(payments).set({ transactionRef: reference, status: "pending" }).where(eq(payments.id, id));
+  await notifyBuildingTeam(building, {
+    type: "payment.link_requested",
+    title: `Demande de paiement — ${building.name} · ${apartment.unitNumber}`,
+    body: `${tenant.fullName} a généré un lien de paiement mobile money.`,
+    href: "/payments",
+  });
   return c.json({ data: link });
 });
 

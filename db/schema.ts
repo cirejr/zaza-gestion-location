@@ -24,6 +24,7 @@ export const utilityType = pgEnum("utility_type", ["water", "electricity", "secu
 export const splitStatus = pgEnum("split_status", ["pending", "split", "notified"]);
 export const ticketStatus = pgEnum("ticket_status", ["pending", "in_progress", "resolved"]);
 export const ticketPriority = pgEnum("ticket_priority", ["low", "normal", "urgent"]);
+export const invitationStatus = pgEnum("invitation_status", ["pending", "accepted", "revoked"]);
 
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -211,6 +212,39 @@ export const maintenanceTickets = pgTable("maintenance_tickets", {
   statusIdx: index("maintenance_tickets_status_idx").on(table.status),
 }));
 
+/**
+ * In-app notification inbox for owners/managers. Written on domain events that
+ * need attention (portal payment, new ticket, tenant requesting a payment link)
+ * and read from the header bell.
+ */
+export const notifications = pgTable("notifications", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  type: varchar("type", { length: 40 }).notNull(),
+  title: varchar("title", { length: 180 }).notNull(),
+  body: text("body"),
+  href: varchar("href", { length: 300 }),
+  readAt: timestamp("read_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  userIdx: index("notifications_user_idx").on(table.userId),
+}));
+
+/** Email invitations to join the workspace as owner/manager. */
+export const invitations = pgTable("invitations", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  email: varchar("email", { length: 255 }).notNull(),
+  role: userRole("role").notNull().default("manager"),
+  token: varchar("token", { length: 64 }).notNull().unique(),
+  status: invitationStatus("status").notNull().default("pending"),
+  invitedBy: uuid("invited_by").notNull().references(() => users.id, { onDelete: "cascade" }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  emailIdx: index("invitations_email_idx").on(table.email),
+}));
+
 export const usersRelations = relations(users, ({ many }) => ({
   ownedBuildings: many(buildings, { relationName: "buildingOwner" }),
   managedBuildings: many(buildings, { relationName: "buildingManager" }),
@@ -278,3 +312,7 @@ export type CommonUtility = typeof commonUtilities.$inferSelect;
 export type NewCommonUtility = typeof commonUtilities.$inferInsert;
 export type MaintenanceTicket = typeof maintenanceTickets.$inferSelect;
 export type NewMaintenanceTicket = typeof maintenanceTickets.$inferInsert;
+export type Notification = typeof notifications.$inferSelect;
+export type NewNotification = typeof notifications.$inferInsert;
+export type Invitation = typeof invitations.$inferSelect;
+export type NewInvitation = typeof invitations.$inferInsert;

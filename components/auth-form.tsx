@@ -1,8 +1,10 @@
 "use client";
 
-import { AlertCircle, ArrowRight, Eye, EyeOff, KeyRound, LockKeyhole, Mail, Sparkles } from "lucide-react";
+import { AlertCircle, ArrowRight, Eye, EyeOff, KeyRound, LockKeyhole, Mail, Sparkles, Users } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { ApiError, apiFetch } from "@/lib/api";
 import { authClient } from "@/lib/auth-client";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -24,7 +26,7 @@ function errorMessage(value: unknown) {
  * `/espace-locataire` with their phone number and a WhatsApp OTP — this
  * surface intentionally has no phone/OTP path.
  */
-export default function AuthForm({ mode }: { mode: AuthMode }) {
+export default function AuthForm({ mode, inviteToken }: { mode: AuthMode; inviteToken?: string }) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -44,6 +46,14 @@ export default function AuthForm({ mode }: { mode: AuthMode }) {
       if (result.error) {
         setError(errorMessage(result.error));
         return;
+      }
+      // Bind a pending team invitation to the freshly created account.
+      if (mode === "signup" && inviteToken) {
+        try {
+          await apiFetch("/api/users/invitations/accept", { method: "POST", body: JSON.stringify({ token: inviteToken }) });
+        } catch (acceptError) {
+          toast.error(acceptError instanceof ApiError ? acceptError.message : "Invitation non appliquée. Contactez l’administrateur.");
+        }
       }
       router.push("/");
       router.refresh();
@@ -113,6 +123,9 @@ export default function AuthForm({ mode }: { mode: AuthMode }) {
             </FieldGroup>
           </form>
           {error && <Alert variant="destructive"><AlertCircle /><AlertDescription>{error}</AlertDescription></Alert>}
+          {mode === "signup" && inviteToken && (
+            <Alert><Users /><AlertDescription>Vous avez été invité(e) à rejoindre une équipe. Créez votre compte avec l’adresse email invitée.</AlertDescription></Alert>
+          )}
         </FieldGroup>
         <p className="mt-6 text-center text-xs text-muted-foreground">{mode === "login" ? "Pas encore de compte ?" : "Vous avez déjà un compte ?"} <a href={mode === "login" ? "/signup" : "/login"} className="font-bold text-primary hover:underline">{mode === "login" ? "Créer un compte" : "Se connecter"}</a></p>
         {mode === "login" && <p className="mt-3 text-center text-[11px] text-muted-foreground"><a href="/forgot-password" className="hover:text-primary">Mot de passe oublié ?</a></p>}
