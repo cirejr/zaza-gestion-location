@@ -3,17 +3,39 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { getDb } from "@/db";
-import { users } from "@/db/schema";
+import { authUsers, users } from "@/db/schema";
 import { requireActor, requireRole } from "@/server/lib/auth-context";
 import { parseBody, parseUuid } from "@/server/lib/http";
 import type { ApiEnv } from "@/server/session-middleware";
 
 const router = new Hono<ApiEnv>();
 const roleInput = z.object({ role: z.enum(["owner", "manager", "tenant"]) });
+const profileInput = z.object({
+  name: z.string().trim().min(1).max(160),
+  phone: z.string().trim().max(32).nullable().optional(),
+});
 
 router.get("/users/me", async (c) => {
   const actor = await requireActor(c);
   return c.json({ data: actor });
+});
+
+/**
+ * Profile self-service. The dashboard reads the domain `users` row (name, phone)
+ * while the session identity lives in Better Auth's `user` table, so both are
+ * kept in sync here.
+ */
+router.patch("/users/me", async (c) => {
+  const actor = await requireActor(c);
+  const data = await parseBody(c, profileInput);
+  const db = getDb();
+  const [updated] = await db
+    .update(users)
+    .set({ name: data.name, phone: data.phone ?? null })
+    .where(eq(users.id, actor.id))
+    .returning();
+  await db.update(authUsers).set({ name: data.name, updatedAt: new Date() }).where(eq(authUsers.email, actor.email));
+  return c.json({ data: updated });
 });
 
 router.get("/users", async (c) => {

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
   Activity,
   Bell,
@@ -24,6 +25,7 @@ import {
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 import type { ApiUser } from "@/lib/dashboard-types";
+import { CommandPalette, type CommandItem } from "@/components/dashboard/command-palette";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -92,11 +94,32 @@ function initials(name: string) {
 export function DashboardShell({ user, children }: { user: ApiUser; children: React.ReactNode }) {
   const pathname = usePathname();
   const current = navGroups.flatMap((group) => group.items).find((item) => isActivePath(pathname, item.href));
+  const [commandOpen, setCommandOpen] = useState(false);
 
   async function signOut() {
     await authClient.signOut();
     window.location.href = "/login";
   }
+
+  // ⌘K on macOS, Ctrl+K elsewhere.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setCommandOpen((open) => !open);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  const commandItems: CommandItem[] = [
+    ...navGroups.flatMap((group) =>
+      group.items.map((item) => ({ id: item.href, label: item.label, group: group.label, icon: item.icon, href: item.href })),
+    ),
+    { id: "/settings", label: "Paramètres", group: "Compte", icon: Settings, href: "/settings" },
+    { id: "sign-out", label: "Se déconnecter", group: "Compte", icon: LogOut, onSelect: () => void signOut() },
+  ];
 
   return (
     <SidebarProvider>
@@ -143,7 +166,9 @@ export function DashboardShell({ user, children }: { user: ApiUser; children: Re
             <Button variant="ghost" size="icon-sm" onClick={() => void signOut()} aria-label="Se déconnecter"><LogOut /></Button>
           </div>
           <SidebarMenu>
-            <SidebarMenuItem><SidebarMenuButton tooltip="Paramètres"><Settings /><span>Paramètres</span></SidebarMenuButton></SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton render={<Link href="/settings" />} isActive={pathname === "/settings"} tooltip="Paramètres"><Settings /><span>Paramètres</span></SidebarMenuButton>
+            </SidebarMenuItem>
           </SidebarMenu>
         </SidebarFooter>
         <SidebarRail />
@@ -155,7 +180,7 @@ export function DashboardShell({ user, children }: { user: ApiUser; children: Re
             <div><p className="text-[10px] font-semibold text-muted-foreground">Naya / {current?.label ?? "Pilotage"}</p><h1 className="text-lg font-bold tracking-tight">{current?.label ?? "Vue d’ensemble"}</h1></div>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="icon" aria-label="Rechercher"><span className="text-xs">⌘K</span></Button>
+            <Button variant="outline" size="icon" aria-label="Rechercher" title="Rechercher (⌘K)" onClick={() => setCommandOpen(true)}><span className="text-xs">⌘K</span></Button>
             <Button variant="outline" size="icon" className="relative" aria-label="Notifications"><Bell /><span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-destructive" /></Button>
             <Separator orientation="vertical" className="mx-1 hidden h-6 sm:block" />
             <DropdownMenu>
@@ -176,6 +201,7 @@ export function DashboardShell({ user, children }: { user: ApiUser; children: Re
         </header>
         <div className="flex-1 p-4 sm:p-6 lg:p-8">{children}</div>
       </SidebarInset>
+      <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} items={commandItems} />
     </SidebarProvider>
   );
 }
