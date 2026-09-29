@@ -10,21 +10,23 @@ import { requireDashboardUser } from "@/lib/dashboard-guard";
 import type { ApiApartment, ApiList, ApiTenant, LeaseRow } from "@/lib/dashboard-types";
 import { formatCfa, formatDate } from "@/lib/dashboard-utils";
 
+/** Apartment rows returned by the purpose-built `/api/leases/options` route. */
+type LeaseOptionApartment = ApiApartment & { buildingName: string };
+
 export const dynamic = "force-dynamic";
 
 export default async function LeasesPage() {
   await requireDashboardUser();
-  const [response, apartments, tenants] = await Promise.all([
+  const [response, options] = await Promise.all([
     serverApiFetch<ApiList<LeaseRow>>("/api/leases?limit=100"),
-    fetchAllApartments(),
-    serverApiFetch<ApiList<ApiTenant>>("/api/tenants?limit=100"),
+    serverApiFetch<{ data: { apartments: LeaseOptionApartment[]; tenants: ApiTenant[] } }>("/api/leases/options"),
   ]);
 
-  const apartmentOptions = apartments.map((apartment) => ({
+  const apartmentOptions = options.data.apartments.map((apartment) => ({
     value: apartment.id,
-    label: `${apartment.unitNumber} — ${formatCfa(apartment.rentAmount)}/mois${apartment.status === "occupied" ? " (occupée)" : ""}`,
+    label: `${apartment.buildingName} · ${apartment.unitNumber} — ${formatCfa(apartment.rentAmount)}/mois${apartment.status === "occupied" ? " (occupée)" : ""}`,
   }));
-  const tenantOptions = tenants.data.map((tenant) => ({ value: tenant.id, label: tenant.fullName }));
+  const tenantOptions = options.data.tenants.map((tenant) => ({ value: tenant.id, label: tenant.fullName }));
 
   return (
     <div className="flex flex-col gap-6">
@@ -77,10 +79,4 @@ export default async function LeasesPage() {
       </Card>
     </div>
   );
-}
-
-async function fetchAllApartments(): Promise<ApiApartment[]> {
-  const buildings = await serverApiFetch<ApiList<{ id: string }>>("/api/buildings?limit=100");
-  const groups = await Promise.all(buildings.data.map((building) => serverApiFetch<ApiList<ApiApartment>>(`/api/buildings/${building.id}/apartments?limit=100`)));
-  return groups.flatMap((group) => group.data);
 }

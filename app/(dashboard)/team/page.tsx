@@ -5,7 +5,7 @@ import { RoleSelect } from "@/components/dashboard/role-select";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { requireDashboardUser } from "@/lib/dashboard-guard";
-import { serverApiFetch } from "@/lib/server-api";
+import { ServerApiError, serverApiFetch } from "@/lib/server-api";
 import type { ApiList, ApiUser } from "@/lib/dashboard-types";
 import { initials } from "@/lib/dashboard-utils";
 
@@ -18,8 +18,11 @@ export default async function TeamPage() {
   try {
     const response = await serverApiFetch<ApiList<ApiUser>>("/api/users");
     users = response.data;
-  } catch {
-    forbidden = true;
+  } catch (error) {
+    // Only an owner can list/manage the team: surface that as the reserved-card,
+    // but let real failures (DB outage, etc.) reach the app error handling.
+    if (error instanceof ServerApiError && error.status === 403) forbidden = true;
+    else throw error;
   }
 
   return (

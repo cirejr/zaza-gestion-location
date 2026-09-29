@@ -1,4 +1,4 @@
-import { and, count, desc, eq, or } from "drizzle-orm";
+import { and, count, desc, eq, getTableColumns, inArray, or } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
@@ -77,6 +77,26 @@ router.get("/leases", async (c) => {
       .where(where),
   ]);
   return c.json({ data, pagination: { page, limit, total: countValue(countRows) } });
+});
+
+router.get("/leases/options", async (c) => {
+  const actor = await requireActor(c);
+  requireRole(actor, ["owner", "manager"]);
+  const db = getDb();
+  const buildingRows = await db.select({ id: buildings.id }).from(buildings).where(buildingAccessCondition(actor));
+  const buildingIds = buildingRows.map((building) => building.id);
+  // One request replaces the previous fan-out (1 buildings call + N per-building
+  // apartment calls) and is not capped, so large portfolios stay complete.
+  const apartmentRows = buildingIds.length
+    ? await db
+        .select({ ...getTableColumns(apartments), buildingName: buildings.name })
+        .from(apartments)
+        .innerJoin(buildings, eq(apartments.buildingId, buildings.id))
+        .where(inArray(apartments.buildingId, buildingIds))
+        .orderBy(apartments.unitNumber)
+    : [];
+  const tenantRows = await db.select().from(tenants).orderBy(desc(tenants.createdAt));
+  return c.json({ data: { apartments: apartmentRows, tenants: tenantRows } });
 });
 
 router.post("/leases", async (c) => {

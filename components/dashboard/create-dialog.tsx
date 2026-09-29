@@ -47,7 +47,16 @@ function buildPayload(fields: DialogField[], values: Values) {
   const payload: Record<string, unknown> = {};
   for (const field of fields) {
     const raw = values[field.name];
-    payload[field.name] = field.type === "number" && typeof raw === "string" && raw.trim() !== "" ? Number(raw) : raw;
+    if (field.type === "number" && typeof raw === "string") {
+      const trimmed = raw.trim();
+      // Omit empty optional numbers instead of sending "" (or null): the API
+      // schemas use `default(...)` / `nullable().optional()`, which only apply
+      // when the field is absent — an empty string fails zod validation.
+      if (trimmed === "") continue;
+      payload[field.name] = Number(trimmed);
+      continue;
+    }
+    payload[field.name] = raw;
   }
   return payload;
 }

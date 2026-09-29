@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { CreatePaymentDialog } from "@/components/dashboard/create-payment-dialog";
+import { CreatePaymentLinkButton } from "@/components/dashboard/create-payment-link-button";
 import { ListControls } from "@/components/dashboard/list-controls";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { RowAction } from "@/components/dashboard/row-action";
@@ -77,13 +78,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
                       {row.payment.status !== "paid" && (
-                        <RowAction
-                          endpoint={`/api/payments/${row.payment.id}/create-link`}
-                          body={{ provider: "paytech" }}
-                          label="Créer un lien de paiement"
-                          icon="link2"
-                          successMessage="Lien de paiement créé."
-                        />
+                        <CreatePaymentLinkButton paymentId={row.payment.id} />
                       )}
                       {row.payment.status === "pending" && (row.tenant.whatsappNumber ?? row.tenant.phone) && (
                         <RowAction
