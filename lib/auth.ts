@@ -12,6 +12,20 @@ import { sendOtpCode, sendSmsMessage, type NotificationResult } from "@/lib/noti
  * credentials, while production uses the same Better Auth instance with a
  * Drizzle/Neon adapter once the auth tables are migrated.
  */
+/**
+ * Phone + OTP identities get a synthetic email from Better Auth's
+ * `signUpOnVerification` because the `user` table requires one. That address is
+ * reserved for the tenant portal: it is never a real inbox, and these accounts
+ * must never be mistaken for managers — they have no application user, no
+ * portfolio and no access to the management dashboard.
+ */
+export const PORTAL_EMAIL_DOMAIN = "portal.naya.app";
+
+/** True for the synthetic emails generated for portal (phone OTP) accounts. */
+export function isPortalEmail(email: string | null | undefined) {
+  return Boolean(email?.toLowerCase().endsWith(`@${PORTAL_EMAIL_DOMAIN}`));
+}
+
 export function createAuth() {
   const appUrl = process.env.APP_URL ?? process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
   const database = process.env.DATABASE_URL
@@ -52,7 +66,7 @@ export function createAuth() {
         otpLength: 6,
         requireVerification: true,
         signUpOnVerification: {
-          getTempEmail: (phoneNumber) => `${phoneNumber.replace(/[^0-9]/g, "")}@portal.naya.app`,
+          getTempEmail: (phoneNumber) => `${phoneNumber.replace(/[^0-9]/g, "")}@${PORTAL_EMAIL_DOMAIN}`,
           getTempName: (phoneNumber) => phoneNumber,
         },
         sendOTP: async ({ phoneNumber: phone, code }) => {

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import { getServerSession } from "@/lib/session";
+import { isPortalEmail } from "@/lib/auth";
 import { serverApiFetch } from "@/lib/server-api";
 import type { ApiUser } from "@/lib/dashboard-types";
 
@@ -19,8 +20,9 @@ import type { ApiUser } from "@/lib/dashboard-types";
 export const requireDashboardUser = cache(async (): Promise<ApiUser> => {
   const session = await getServerSession();
   if (!session) redirect("/login?redirect=/");
-  // Phone-only tenant accounts have no dashboard identity — portal instead.
-  if (!session.user.email) redirect("/espace-locataire");
+  // Portal identities (phone + OTP, synthetic `@portal.naya.app` email) and
+  // accounts with no email at all belong in the tenant portal, never here.
+  if (!session.user.email || isPortalEmail(session.user.email)) redirect("/espace-locataire");
   const response = await serverApiFetch<{ data: ApiUser }>("/api/users/me");
   // Tenant-role accounts use the tenant portal instead of the management dashboard.
   if (response.data.role === "tenant") redirect("/espace-locataire");

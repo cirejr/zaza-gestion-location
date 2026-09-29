@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import { getDb } from "@/db";
 import { buildings, users, type User } from "@/db/schema";
+import { isPortalEmail } from "@/lib/auth";
 import type { RequestContext } from "@/server/lib/http";
 
 export type DomainUser = typeof users.$inferSelect;
@@ -18,9 +19,11 @@ export async function requireActor(c: RequestContext): Promise<DomainUser> {
   const session = c.get("session");
   if (!session) throw new HTTPException(401, { message: "Authentication required." });
 
-  // Phone-only accounts (verified by SMS/WhatsApp OTP) have no email on the
-  // Better Auth user and use the tenant portal instead of the dashboard.
-  if (!session.user.email) {
+  // Portal identities (phone + OTP) carry a synthetic `@portal.naya.app` email
+  // because Better Auth's `user` table requires one. They are not managers: they
+  // must be rejected here, before the bootstrap below would create an
+  // application user with the `owner` role and an empty portfolio of their own.
+  if (!session.user.email || isPortalEmail(session.user.email)) {
     throw new HTTPException(403, { message: "Ce compte n’a pas d’adresse email. Utilisez l’espace locataire." });
   }
   const email = session.user.email.toLowerCase();
