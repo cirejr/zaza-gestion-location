@@ -1,9 +1,10 @@
 import { betterAuth } from "better-auth";
+import { APIError } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { phoneNumber } from "better-auth/plugins";
 import { getDb } from "@/db";
 import { authAccounts, authSessions, authUsers, authVerifications } from "@/db/schema";
-import { sendOtpCode, sendSmsMessage } from "@/lib/notifications";
+import { sendOtpCode, sendSmsMessage, type NotificationResult } from "@/lib/notifications";
 
 /**
  * Auth is intentionally kept behind a factory: the UI can be previewed without
@@ -42,15 +43,33 @@ export function createAuth() {
       phoneNumber({
         otpLength: 6,
         requireVerification: true,
+        signUpOnVerification: {
+          getTempEmail: (phoneNumber) => `${phoneNumber.replace(/[^0-9]/g, "")}@portal.naya.app`,
+          getTempName: (phoneNumber) => phoneNumber,
+        },
         sendOTP: async ({ phoneNumber: phone, code }) => {
           // OTP delivery prefers the WhatsApp authentication template
           // (`naya_otp`). SMS is only a fallback when Meta is not configured.
-          const whatsapp = await sendOtpCode({ to: phone, code });
-          if (whatsapp.delivered) return;
-          const sms = await sendSmsMessage({ to: phone, message: `Votre code Naya est : ${code}. Il expire dans 5 minutes.` });
-          if (!sms.delivered) {
-            throw new Error("Aucun canal de livraison du code configuré (Meta WhatsApp ou SMS).");
+          // Failures surface as a clean 503 (not a bare 500): Better Auth's
+          // endpoint wraps the hook's throw into the response body.
+          const failures: NotificationResult[] = [];
+          try {
+            const whatsapp = await sendOtpCode({ to: phone, code });
+            failures.push(whatsapp);
+            if (whatsapp.delivered) return;
+            const sms = await sendSmsMessage({ to: phone, message: `Votre code Naya est : ${code}. Il expire dans 5 minutes.` });
+            failures.push(sms);
+            if (sms.delivered) return;
+          } catch (error) {
+            console.error("OTP delivery error", error);
+            throw new APIError("SERVICE_UNAVAILABLE", {
+              message: `Envoi du code impossible${error instanceof Error ? ` : ${error.message}` : "."}`,
+            });
           }
+          const reasons = failures.map((failure) => failure.providerMessage).filter(Boolean).join(" · ");
+          throw new APIError("SERVICE_UNAVAILABLE", {
+            message: `Envoi du code indisponible${reasons ? ` : ${reasons}` : "."}`,
+          });
         },
       }),
     ],
