@@ -3,11 +3,17 @@
  *
  * WhatsApp uses the official Meta Cloud API (graph.facebook.com, graph version
  * v23.0 as of writing) with registered template messages (`relance_loyer`,
- * `note_charges`, `naya_otp`). SMS stays as an optional fallback only.
+ * `note_charges`, `naya_otp`).
  *
- * When Meta credentials are missing, senders return a *preview* result
- * (`delivered: false`) so the rest of the app keeps working; callers that need
- * guaranteed delivery (e.g. the OTP flow) must escalate.
+ * SMS (Twilio) is the OTP channel of record, because it needs no template
+ * approval and no Meta review — WhatsApp is a better channel when it is
+ * available, and every sender degrades to the other.
+ *
+ * When a provider is not configured, senders return a *preview* result
+ * (`delivered: false`, `messageId` starting with `preview-`) so the rest of the
+ * app keeps working; callers that need guaranteed delivery (e.g. the OTP flow)
+ * must escalate. A preview means "not configured", which is distinct from a real
+ * send that failed, and is what lets callers fall back to another channel.
  */
 
 export type NotificationChannel = "whatsapp" | "sms";
@@ -23,6 +29,41 @@ const WHATSAPP_GRAPH_VERSION = process.env.WHATSAPP_GRAPH_VERSION ?? "v23.0";
 
 function preview(channel: NotificationChannel, providerMessage: string): NotificationResult {
   return { channel, messageId: `preview-${Date.now()}`, delivered: false, providerMessage };
+}
+
+/** True for a "provider not configured" result, as opposed to a send that failed. */
+export function isPreviewResult(result: NotificationResult) {
+  return result.messageId.startsWith("preview-");
+}
+
+/**
+ * Convert free text into strict E.164 for Twilio.
+ *
+ * Numbers reach this module from three places — the portal login form, a manager
+ * typing a reminder, and the `tenants` table — and all of them hold whatever a
+ * human typed (`+221 78 968 03 18`). Twilio rejects anything that is not `+`
+ * followed by digits, so the conversion belongs here once rather than at each of
+ * the five call sites.
+ *
+ * Nine digits starting with 7 or 8 is a Senegalese mobile number written in the
+ * local format, so it gets the `+221` prefix. Anything else ambiguous returns
+ * null rather than being guessed: sending an OTP to the wrong number is worse
+ * than not sending it.
+ */
+export function toE164(value: string | null | undefined): string | null {
+  if (!value) return null;
+  let digits = value.trim().replace(/[^0-9]/g, "");
+  if (digits.startsWith("00")) digits = digits.slice(2);
+  if (!digits) return null;
+  if (digits.length === 12 && digits.startsWith("221")) return `+${digits}`;
+  if (value.trim().startsWith("+")) return digits.length >= 8 && digits.length <= 15 ? `+${digits}` : null;
+  if (digits.length === 9 && /^[78]/.test(digits)) return `+221${digits}`;
+  return null;
+}
+
+/** Meta's Cloud API wants the recipient as bare digits, with no `+`. */
+function metaRecipient(value: string) {
+  return value.replace(/[^0-9]/g, "");
 }
 
 function metasConfig(): { accessToken: string; phoneNumberId: string } | null {
@@ -63,7 +104,7 @@ export async function sendWhatsAppTemplate(input: {
     body: JSON.stringify({
       messaging_product: "whatsapp",
       recipient_type: "individual",
-      to: input.to,
+      to: metaRecipient(input.to),
       type: "template",
       template: {
         name: input.templateName,
@@ -91,7 +132,7 @@ export async function sendWhatsAppTextMessage(input: { to: string; message: stri
     body: JSON.stringify({
       messaging_product: "whatsapp",
       recipient_type: "individual",
-      to: input.to,
+      to: metaRecipient(input.to),
       type: "text",
       text: { body: input.message },
     }),
@@ -163,16 +204,46 @@ export function rentReminderMessage(input: {
   return input.paymentUrl ? `${base} Payez ici : ${input.paymentUrl}` : base;
 }
 
-/** Optional SMS fallback (Twilio). Same OK/throw contract as the WhatsApp senders. */
+/** Free-text fallback for a charge note, used when WhatsApp templates are unavailable. */
+export function utilityNoticeMessage(input: {
+  tenantName: string;
+  type: string;
+  period: string;
+  amount: number;
+  unitNumber: string;
+}) {
+  return `Bonjour ${input.tenantName}, les ${utilityTypeLabel(input.type)} de ${input.period} pour l'unité ${input.unitNumber} s'élèvent à ${input.amount.toLocaleString("fr-FR")} FCFA. Merci de régler auprès de votre gestionnaire.`;
+}
+
+/**
+ * SMS delivery through Twilio. This is the OTP channel of record: WhatsApp needs
+ * Meta credentials *and* approved templates, while SMS only needs Twilio.
+ *
+ * `TWILIO_SENDER_ID` (alphanumeric, e.g. "Naya") takes precedence over
+ * `TWILIO_FROM_NUMBER` because since 2026-09-08 Orange and Expresso in Senegal
+ * reject international long codes with error 21612 — which every Twilio number
+ * is. An alphanumeric sender goes in the same `From` field, so nothing else
+ * changes; the numeric fallback still serves networks that still accept it.
+ */
 export async function sendSmsMessage(input: { to: string; message: string }): Promise<NotificationResult> {
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
   const authToken = process.env.TWILIO_AUTH_TOKEN;
-  const from = process.env.TWILIO_FROM_NUMBER;
+  const from = process.env.TWILIO_SENDER_ID || process.env.TWILIO_FROM_NUMBER;
   if (!accountSid || !authToken || !from) {
     return preview("sms", "Twilio non configuré");
   }
 
-  const body = new URLSearchParams({ To: input.to, From: from, Body: input.message });
+  const to = toE164(input.to);
+  if (!to) {
+    return {
+      channel: "sms",
+      messageId: `invalid-${Date.now()}`,
+      delivered: false,
+      providerMessage: `Numéro invalide : ${input.to}`,
+    };
+  }
+
+  const body = new URLSearchParams({ To: to, From: from, Body: input.message });
   const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
     method: "POST",
     headers: {
@@ -181,7 +252,21 @@ export async function sendSmsMessage(input: { to: string; message: string }): Pr
     },
     body,
   });
-  if (!response.ok) throw new Error(`Twilio returned ${response.status}.`);
+
+  // Returns rather than throws: the OTP hook turns an undelivered result into a
+  // clean 503 that names the reason. A bare "Twilio returned 400." would hide
+  // the codes that actually explain it — 21612 for a rejected sender, 21211
+  // for a malformed number, 20003 for bad auth.
+  if (!response.ok) {
+    const error = (await response.json().catch(() => null)) as { code?: number; message?: string } | null;
+    return {
+      channel: "sms",
+      messageId: `twilio-error-${Date.now()}`,
+      delivered: false,
+      providerMessage: `Twilio ${error?.code ?? response.status}${error?.message ? ` : ${error.message}` : ""}`,
+    };
+  }
+
   const result = (await response.json()) as { sid?: string; status?: string };
   return { channel: "sms", messageId: result.sid ?? `twilio-${Date.now()}`, delivered: true, providerMessage: result.status };
 }

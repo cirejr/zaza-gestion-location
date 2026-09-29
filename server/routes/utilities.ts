@@ -4,7 +4,7 @@ import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { apartments, buildings, commonUtilities, leases, tenants, utilitySplits } from "@/db/schema";
-import { sendUtilityNotice } from "@/lib/notifications";
+import { isPreviewResult, sendSmsMessage, sendUtilityNotice, utilityNoticeMessage, type NotificationChannel } from "@/lib/notifications";
 import { splitCommonCharge } from "@/lib/utility-split";
 import { getBuildingForActor, requireActor, requireRole } from "@/server/lib/auth-context";
 import { pagination, parseBody, parseUuid, countValue } from "@/server/lib/http";
@@ -185,22 +185,44 @@ router.post("/utilities/:id/notify", async (c) => {
     .innerJoin(leases, and(eq(leases.apartmentId, apartments.id), eq(leases.status, "active")))
     .innerJoin(tenants, eq(leases.tenantId, tenants.id))
     .where(eq(utilitySplits.utilityId, id));
-  const results = [] as Array<{ apartmentId: string; delivered: boolean; messageId: string }>;
+  const results = [] as Array<{ apartmentId: string; delivered: boolean; channel: NotificationChannel; messageId: string }>;
+  let deliveredCount = 0;
   for (const row of rows) {
     const phone = row.tenant.whatsappNumber ?? row.tenant.phone;
-    const result = await sendUtilityNotice({
-      to: phone,
+    const message = {
       tenantName: row.tenant.fullName,
       type: utility.type,
       period: utility.period,
       amount: Number(row.split.amount),
       unitNumber: row.apartment.unitNumber,
+    };
+    let result = await sendUtilityNotice({ to: phone, ...message });
+    // A preview means Meta is not configured, which is not the same as a send
+    // that failed: the note is still worth delivering by SMS rather than lost.
+    if (isPreviewResult(result)) {
+      const sms = await sendSmsMessage({ to: phone, message: utilityNoticeMessage(message) });
+      if (sms.delivered) result = sms;
+    }
+    // Only record what actually went out. Marking an undelivered note as sent
+    // would push the invoice into `notified` and disable the retry button, so a
+    // failed send would be permanently invisible.
+    if (result.delivered) {
+      await db.update(utilitySplits).set({ sentAt: new Date() }).where(eq(utilitySplits.id, row.split.id));
+      deliveredCount += 1;
+    }
+    results.push({
+      apartmentId: row.apartment.id,
+      delivered: result.delivered,
+      channel: result.channel,
+      messageId: result.messageId,
     });
-    await db.update(utilitySplits).set({ sentAt: new Date() }).where(eq(utilitySplits.id, row.split.id));
-    results.push({ apartmentId: row.apartment.id, delivered: result.delivered, messageId: result.messageId });
   }
-  await db.update(commonUtilities).set({ splitStatus: "notified", notifiedAt: new Date() }).where(eq(commonUtilities.id, id));
-  return c.json({ data: { utilityId: id, notifications: results } });
+  // `notified` only when every occupant was reached; otherwise the invoice stays
+  // in `split` so the action can be retried.
+  if (rows.length > 0 && deliveredCount === rows.length) {
+    await db.update(commonUtilities).set({ splitStatus: "notified", notifiedAt: new Date() }).where(eq(commonUtilities.id, id));
+  }
+  return c.json({ data: { utilityId: id, delivered: deliveredCount, total: rows.length, notifications: results } });
 });
 
 export default router;

@@ -65,7 +65,7 @@ export const utilityColumns = columnHelper.columns([
           label="Notifier les locataires"
           icon="send"
           confirm
-          confirmTitle="Envoyer la note aux locataires par WhatsApp ?"
+          confirmTitle="Envoyer la note aux locataires (WhatsApp, sinon SMS) ?"
           successMessage="Notes envoyées."
           disabled={row.original.utility.splitStatus === "notified"}
         />

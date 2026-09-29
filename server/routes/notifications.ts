@@ -4,7 +4,7 @@ import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { notifications } from "@/db/schema";
-import { rentReminderMessage, sendRentReminder, sendSmsMessage } from "@/lib/notifications";
+import { isPreviewResult, rentReminderMessage, sendRentReminder, sendSmsMessage, type NotificationResult } from "@/lib/notifications";
 import { requireActor, requireRole } from "@/server/lib/auth-context";
 import { countValue, pagination, parseBody, parseUuid } from "@/server/lib/http";
 import type { ApiEnv } from "@/server/session-middleware";
@@ -30,17 +30,32 @@ router.post("/notifications/rent-reminder", async (c) => {
   const actor = await requireActor(c);
   requireRole(actor, ["owner", "manager"]);
   const data = await parseBody(c, input);
-  const result = data.channel === "whatsapp"
-    ? await sendRentReminder({
-        to: data.phone,
-        tenantName: data.tenantName,
-        buildingName: data.buildingName,
-        unitNumber: data.unitNumber,
-        amount: data.amount,
-        dueDate: data.dueDate,
-      })
-    : await sendSmsMessage({ to: data.phone, message: rentReminderMessage(data) });
-  return c.json({ data: result });
+  const requested = data.channel;
+  let result =
+    requested === "whatsapp"
+      ? await sendRentReminder({
+          to: data.phone,
+          tenantName: data.tenantName,
+          buildingName: data.buildingName,
+          unitNumber: data.unitNumber,
+          amount: data.amount,
+          dueDate: data.dueDate,
+        })
+      : await sendSmsMessage({ to: data.phone, message: rentReminderMessage(data) });
+
+  // A preview means Meta is not configured, which is not the same as a send that
+  // failed. Falling back there keeps the reminder useful while the Cloud API is
+  // still being set up; a genuine WhatsApp failure is reported as-is rather than
+  // silently re-sent over a channel the manager did not pick.
+  let fallback: NotificationResult | null = null;
+  if (requested === "whatsapp" && isPreviewResult(result)) {
+    const sms = await sendSmsMessage({ to: data.phone, message: rentReminderMessage(data) });
+    if (sms.delivered) {
+      fallback = sms;
+      result = sms;
+    }
+  }
+  return c.json({ data: { ...result, requestedChannel: requested, fallback } });
 });
 
 /**
