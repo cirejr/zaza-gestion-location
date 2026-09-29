@@ -48,10 +48,19 @@ function DropdownMenuContent({
   )
 }
 
+/**
+ * Base UI: `Menu.Group` renders `<div role="group">` and owns the group
+ * context. Always pair it with `<DropdownMenuGroup>` + `<DropdownMenuLabel>`.
+ */
 function DropdownMenuGroup({ ...props }: MenuPrimitive.Group.Props) {
   return <MenuPrimitive.Group data-slot="dropdown-menu-group" {...props} />
 }
 
+/**
+ * Base UI: maps to `Menu.GroupLabel`, which throws "MenuGroupContext is
+ * missing" when rendered outside a `<DropdownMenuGroup>` (unlike the Radix
+ * port, where the group context was optional). Keep it as a child of a group.
+ */
 function DropdownMenuLabel({
   className,
   inset,

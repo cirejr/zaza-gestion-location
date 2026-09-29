@@ -164,9 +164,9 @@ export function DashboardShell({ user, children }: { user: ApiUser; children: Re
                 <span className="hidden text-left sm:block"><span className="block max-w-28 truncate text-xs font-semibold">{user.name}</span><span className="block text-[10px] text-muted-foreground">{user.role === "owner" ? "Propriétaire" : user.role === "manager" ? "Gérant" : "Locataire"}</span></span>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel>{user.email}</DropdownMenuLabel>
-                <DropdownMenuSeparator />
                 <DropdownMenuGroup>
+                  <DropdownMenuLabel>{user.email}</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem render={<Link href="/reports" />}><Activity />Rapports</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => void signOut()}><LogOut />Se déconnecter</DropdownMenuItem>
                 </DropdownMenuGroup>

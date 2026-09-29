@@ -94,6 +94,10 @@ function SelectContent({
   )
 }
 
+/**
+ * Base UI: maps to `Select.GroupLabel`, which throws when rendered outside a
+ * `<SelectGroup>`. Keep it as a child of a group.
+ */
 function SelectLabel({
   className,
   ...props
