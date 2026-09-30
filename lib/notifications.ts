@@ -228,7 +228,14 @@ export function sendUtilityNotice(input: {
   });
 }
 
-/** Business helper — OTP delivery via the `naya_otp` authentication template. */
+/**
+ * OTP via the Meta `naya_otp` authentication template.
+ *
+ * Not in the OTP ladder while WhatsApp is being set up — Meta is still in review.
+ * Kept rather than deleted because the template name and variable layout are
+ * already settled, and reinstating it is a one-line change to the ladder in
+ * `lib/auth.ts` once the credentials and approval exist.
+ */
 export function sendOtpCode(input: { to: string; code: string }): Promise<NotificationResult> {
   return sendWhatsAppTemplate({ to: input.to, templateName: "naya_otp", bodyParameters: [input.code] });
 }
@@ -305,8 +312,11 @@ export async function sendTwilioWhatsApp(input: {
 }
 
 /**
- * OTP over Twilio WhatsApp, using WhatsApp's pre-approved authentication
- * template.
+ * OTP over Twilio WhatsApp, using WhatsApp's pre-approved authentication template.
+ *
+ * Not in the OTP ladder while WhatsApp is being set up — this template still needs
+ * WhatsApp approval. Kept for the same reason as `sendOtpCode`: reinstating it is
+ * a one-line change once the approval lands.
  *
  * `code_expiration_minutes` on that template is the tenant's only statement of
  * how long the code lives, so create it with the value the rest of the app
