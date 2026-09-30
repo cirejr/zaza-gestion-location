@@ -65,8 +65,23 @@ export const utilityColumns = columnHelper.columns([
           label="Notifier les locataires"
           icon="send"
           confirm
-          confirmTitle="Envoyer la note aux locataires (WhatsApp, sinon SMS) ?"
-          successMessage="Notes envoyées."
+          confirmTitle="Envoyer la note de charges à tous les locataires actifs ?"
+          // This fans out to every occupant, so the counts are the point: a fixed
+          // string here claimed success even when nothing was delivered, and the
+          // channel can differ per occupant when the ladder falls back mid-list.
+          successMessage={(data) => {
+            const body = data as
+              | { data?: { delivered?: number; total?: number; notifications?: Array<{ delivered: boolean; channel?: string }> } }
+              | null;
+            const delivered = body?.data?.delivered ?? 0;
+            const total = body?.data?.total ?? 0;
+            if (total === 0) return "Aucun locataire actif dans cette facture.";
+            const noun = total > 1 ? "locataires" : "locataire";
+            if (delivered === 0) return `Aucune note envoyée sur ${total} ${noun}.`;
+            if (delivered < total) return `${delivered} note(s) sur ${total} envoyée(s) — les autres sont à réessayer.`;
+            const via = body?.data?.notifications?.[0]?.channel === "whatsapp" ? "WhatsApp" : "SMS";
+            return `Notes envoyées à ${delivered} ${noun} par ${via}.`;
+          }}
           disabled={row.original.utility.splitStatus === "notified"}
         />
         <EditUtilityDialog utility={row.original.utility} />

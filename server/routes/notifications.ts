@@ -4,14 +4,14 @@ import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { notifications } from "@/db/schema";
-import { deliverWithFallback, rentReminderMessage, sendRentReminder, sendSmsMessage, sendTwilioRentReminder, type NotificationResult } from "@/lib/notifications";
+import { channelLabel, defaultChannel, deliverWithFallback, rentReminderMessage, sendRentReminder, sendSmsMessage, sendTwilioRentReminder, type NotificationResult } from "@/lib/notifications";
 import { requireActor, requireRole } from "@/server/lib/auth-context";
 import { countValue, pagination, parseBody, parseUuid } from "@/server/lib/http";
 import type { ApiEnv } from "@/server/session-middleware";
 
 const router = new Hono<ApiEnv>();
 const input = z.object({
-  channel: z.enum(["whatsapp", "sms"]),
+  channel: z.enum(["whatsapp", "sms"]).optional(),
   phone: z.string().min(8).max(32),
   tenantName: z.string().min(1).max(160),
   buildingName: z.string().min(1).max(160),
@@ -39,15 +39,18 @@ function reminderFields(data: {
 }
 
 /**
- * Rent reminder. A WhatsApp request walks Meta's `relance_loyer` template, then
- * Twilio's equivalent, then SMS — but only while each provider reports itself
- * unconfigured. An explicit `sms` request stays on SMS.
+ * Rent reminder. The channel is the server's decision (`defaultChannel()`) unless
+ * the caller states one, because a hardcoded channel at the call site reports a
+ * WhatsApp send that quietly went out as SMS. A WhatsApp request walks Meta's
+ * `relance_loyer` template, then Twilio's equivalent, then SMS — but only while
+ * each provider reports itself unconfigured. An explicit `sms` request stays on
+ * SMS.
  */
 router.post("/notifications/rent-reminder", async (c) => {
   const actor = await requireActor(c);
   requireRole(actor, ["owner", "manager"]);
   const data = await parseBody(c, input);
-  const requested = data.channel;
+  const requested = data.channel ?? defaultChannel();
   const message = rentReminderMessage(data);
   const { result, attempts } = await deliverWithFallback(
     () =>
@@ -61,7 +64,7 @@ router.post("/notifications/rent-reminder", async (c) => {
         ]
       : [],
   );
-  return c.json({ data: { ...result, requestedChannel: requested, attempts } });
+  return c.json({ data: { ...result, requestedChannel: requested, deliveredVia: channelLabel(result.channel), attempts } });
 });
 
 /**

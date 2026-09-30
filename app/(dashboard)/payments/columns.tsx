@@ -59,7 +59,6 @@ export const paymentColumns = columnHelper.columns([
           <RowAction
             endpoint="/api/notifications/rent-reminder"
             body={{
-              channel: "whatsapp",
               phone: row.original.tenant.whatsappNumber ?? row.original.tenant.phone ?? "",
               tenantName: row.original.tenant.fullName,
               buildingName: row.original.building.name,
@@ -70,7 +69,13 @@ export const paymentColumns = columnHelper.columns([
             label="Relancer"
             size="sm"
             variant="outline"
-            successMessage="Relance envoyée."
+            // The server picks the channel, and may fall back past the one that was
+            // asked for. Name what was actually used rather than a fixed string that
+            // would claim WhatsApp while an SMS went out.
+            successMessage={(data) => {
+              const sent = data as { data?: { deliveredVia?: string } } | null;
+              return `Relance envoyée par ${sent?.data?.deliveredVia ?? "SMS"}.`;
+            }}
           />
         )}
         <Button render={<a href={`/api/payments/${row.original.payment.id}/receipt.pdf`} target="_blank" rel="noreferrer" />} variant="ghost" size="icon-sm" aria-label="Télécharger le reçu">

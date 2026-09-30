@@ -35,7 +35,12 @@ export function RowAction({
   icon?: string;
   variant?: "ghost" | "outline" | "secondary" | "default" | "destructive";
   size?: "sm" | "icon-sm" | "icon" | "lg" | "default";
-  successMessage?: string;
+  /**
+   * A function is given the response body, for actions whose outcome the caller
+   * cannot know up front — the channel a message actually went out on, say. A
+   * fixed string there would claim a success the server didn't report.
+   */
+  successMessage?: string | ((data: unknown) => string);
   confirm?: boolean;
   confirmTitle?: string;
   disabled?: boolean;
@@ -48,8 +53,8 @@ export function RowAction({
     if (confirm && !window.confirm(confirmTitle ?? `Confirmer : ${label.toLowerCase()} ?`)) return;
     setLoading(true);
     try {
-      await apiFetch(endpoint, { method, body: body == null ? undefined : JSON.stringify(body) });
-      toast.success(successMessage);
+      const data = await apiFetch<unknown>(endpoint, { method, body: body == null ? undefined : JSON.stringify(body) });
+      toast.success(typeof successMessage === "function" ? successMessage(data) : successMessage);
       router.refresh();
     } catch (error) {
       toast.error(error instanceof ApiError ? error.message : error instanceof Error ? error.message : "Une erreur est survenue.");

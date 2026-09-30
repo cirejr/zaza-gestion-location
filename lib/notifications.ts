@@ -37,6 +37,25 @@ export function isPreviewResult(result: NotificationResult) {
 }
 
 /**
+ * The channel business-initiated messages go out on when the caller states no
+ * preference.
+ *
+ * SMS by default. WhatsApp needs a Meta review *and* an approved template, and
+ * until both land the fallback ladder arrives at SMS anyway — so the useful thing
+ * is to name the intended channel in one place rather than let each call site
+ * hardcode one and quietly disagree. Set `MESSAGING_DEFAULT_CHANNEL="whatsapp"`
+ * once the credentials and templates are in place; nothing else has to change.
+ */
+export function defaultChannel(): NotificationChannel {
+  return process.env.MESSAGING_DEFAULT_CHANNEL === "whatsapp" ? "whatsapp" : "sms";
+}
+
+/** Human-readable channel name, for messages a manager reads. */
+export function channelLabel(channel: NotificationChannel): string {
+  return channel === "whatsapp" ? "WhatsApp" : "SMS";
+}
+
+/**
  * Try one channel, then fall back to others, and stop at the first that actually
  * delivered.
  *

@@ -4,7 +4,7 @@ import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { apartments, buildings, commonUtilities, leases, tenants, utilitySplits } from "@/db/schema";
-import { isPreviewResult, sendSmsMessage, sendTwilioUtilityNotice, sendUtilityNotice, utilityNoticeMessage, type NotificationChannel } from "@/lib/notifications";
+import { defaultChannel, deliverWithFallback, sendSmsMessage, sendTwilioUtilityNotice, sendUtilityNotice, utilityNoticeMessage, type NotificationChannel, type NotificationResult } from "@/lib/notifications";
 import { splitCommonCharge } from "@/lib/utility-split";
 import { getBuildingForActor, requireActor, requireRole } from "@/server/lib/auth-context";
 import { pagination, parseBody, parseUuid, countValue } from "@/server/lib/http";
@@ -186,6 +186,7 @@ router.post("/utilities/:id/notify", async (c) => {
     .innerJoin(tenants, eq(leases.tenantId, tenants.id))
     .where(eq(utilitySplits.utilityId, id));
   const results = [] as Array<{ apartmentId: string; delivered: boolean; channel: NotificationChannel; messageId: string }>;
+  const requested = defaultChannel();
   let deliveredCount = 0;
   for (const row of rows) {
     const phone = row.tenant.whatsappNumber ?? row.tenant.phone;
@@ -196,18 +197,25 @@ router.post("/utilities/:id/notify", async (c) => {
       amount: Number(row.split.amount),
       unitNumber: row.apartment.unitNumber,
     };
-    let result = await sendUtilityNotice({ to: phone, ...message });
-    // Only an unconfigured provider justifies switching channels; a send that was
-    // attempted and failed is reported rather than re-sent behind the manager's
-    // back. Twilio's equivalent template sits between Meta and plain SMS.
-    if (isPreviewResult(result)) {
-      const twilio = await sendTwilioUtilityNotice({ to: phone, ...message });
-      if (twilio.delivered) result = twilio;
-      else if (isPreviewResult(twilio)) {
-        const sms = await sendSmsMessage({ to: phone, message: utilityNoticeMessage(message) });
-        if (sms.delivered) result = sms;
-      }
-    }
+    let result: NotificationResult;
+    // The channel is the server's decision, as for rent reminders. A WhatsApp
+    // request walks Meta's `note_charges` template, then Twilio's equivalent, then
+    // plain SMS — but only while each provider reports itself unconfigured. A send
+    // that was attempted and failed is reported rather than re-sent behind the
+    // manager's back.
+    const { result: sent } = await deliverWithFallback(
+      () =>
+        requested === "whatsapp"
+          ? sendUtilityNotice({ to: phone, ...message })
+          : sendSmsMessage({ to: phone, message: utilityNoticeMessage(message) }),
+      requested === "whatsapp"
+        ? [
+            () => sendTwilioUtilityNotice({ to: phone, ...message }),
+            () => sendSmsMessage({ to: phone, message: utilityNoticeMessage(message) }),
+          ]
+        : [],
+    );
+    result = sent;
     // Only record what actually went out. Marking an undelivered note as sent
     // would push the invoice into `notified` and disable the retry button, so a
     // failed send would be permanently invisible.
