@@ -5,7 +5,7 @@ import { phoneNumber } from "better-auth/plugins";
 import { getDb } from "@/db";
 import { authAccounts, authSessions, authUsers, authVerifications } from "@/db/schema";
 import { resetPasswordEmail, sendEmail } from "@/lib/email";
-import { deliverWithFallback, sendOtpCode, sendSmsMessage, sendTwilioOtp, type NotificationResult } from "@/lib/notifications";
+import { deliverWithFallback, sendOtpCode, sendSmsMessage, sendTwilioOtp, sendTwilioVerifyOtp, type NotificationResult } from "@/lib/notifications";
 
 /**
  * Auth is intentionally kept behind a factory: the UI can be previewed without
@@ -73,7 +73,10 @@ export function createAuth() {
           // WhatsApp first on both providers, because the authentication
           // template offers a copy-code button and one-tap autofill that reading
           // a code off an SMS cannot. SMS stays the final net because it needs no
-          // template approval at all. Failures surface as a clean 503 (not a bare
+          // template approval at all. Verify sits just before raw SMS because it
+          // still needs a service created but nothing else — no sender to provision
+          // in a carrier sense, no template to have approved — and Twilio manages
+          // that side per country. Failures surface as a clean 503 (not a bare
           // 500): Better Auth's endpoint wraps the hook's throw into the body.
           const failures: NotificationResult[] = [];
           try {
@@ -81,6 +84,7 @@ export function createAuth() {
               () => sendOtpCode({ to: phone, code }),
               [
                 () => sendTwilioOtp({ to: phone, code }),
+                () => sendTwilioVerifyOtp({ to: phone, code }),
                 () => sendSmsMessage({ to: phone, message: `Votre code Naya est : ${code}. Il expire dans 5 minutes.` }),
               ],
             );

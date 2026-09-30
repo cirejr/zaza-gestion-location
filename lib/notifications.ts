@@ -299,6 +299,56 @@ export function sendTwilioOtp(input: { to: string; code: string }): Promise<Noti
   return sendTwilioWhatsApp({ to: input.to, contentSid, contentVariables: { "1": input.code } });
 }
 
+/** The channel Verify sends on. SMS is the zero-setup default; see `TWILIO_VERIFY_CHANNEL`. */
+function verifyChannel(): NotificationChannel {
+  return process.env.TWILIO_VERIFY_CHANNEL === "whatsapp" ? "whatsapp" : "sms";
+}
+
+/**
+ * OTP over Twilio Verify, used purely as a delivery transport.
+ *
+ * Verify is normally the component that generates, stores and checks the code. Here
+ * it is only a pipe: Better Auth already generated the code, persists it, and
+ * validates it on `verifyPhoneNumber`, so our code goes out as `CustomCode` and no
+ * part of authentication changes. That requires "Enable Custom Verification Code"
+ * on the service — without it Twilio silently issues a code of its own, the tenant
+ * receives a code we never generated, and every login then fails with nothing
+ * pointing at the cause.
+ *
+ * Two properties justify the rung even with the Messages API reachable: Verify
+ * authenticates with an API key and puts no account SID in the URL, and Twilio
+ * owns the sender and its per-country pre-screened localisations — which is exactly
+ * the sender-compliance work Senegal's alphanumeric-sender rule would otherwise
+ * push onto us.
+ *
+ * Note: Twilio asks custom-code senders to report the outcome of each verification
+ * so it can tune routing. The `VE…` sid is returned as this result's `messageId` so
+ * the attempt is at least identifiable; nothing reports success back yet.
+ */
+export async function sendTwilioVerifyOtp(input: { to: string; code: string }): Promise<NotificationResult> {
+  const channel = verifyChannel();
+  const serviceSid = process.env.TWILIO_VERIFY_SERVICE_SID?.trim();
+  // A wrong SID here would build a nonsense URL, so treat anything but "VA…" as unset.
+  if (!serviceSid?.startsWith("VA")) return preview(channel, "Service Verify non configuré");
+
+  const to = toE164(input.to);
+  if (!to) return invalidRecipient(channel, input.to);
+
+  const outcome = await twilioPost(
+    `https://verify.twilio.com/v2/Services/${serviceSid}/Verifications`,
+    new URLSearchParams({ To: to, Channel: channel, CustomCode: input.code }),
+  );
+  if (outcome.state === "unconfigured") return preview(channel, "Twilio non configuré");
+  if (outcome.state === "failed") return twilioFailure(channel, outcome.reason);
+  // "pending" is Twilio accepting the message for delivery, not a delivery receipt.
+  return {
+    channel,
+    messageId: outcome.sid ?? `twilio-verify-${Date.now()}`,
+    delivered: true,
+    providerMessage: outcome.status ?? "pending",
+  };
+}
+
 /** Rent reminder over Twilio WhatsApp, via a `relance_loyer` content template. */
 export function sendTwilioRentReminder(input: {
   to: string;
@@ -359,6 +409,69 @@ function twilioWhatsappSender() {
 }
 
 /**
+ * Basic credentials for Twilio. An API key ("SK…" plus its secret) is preferred
+ * over the account SID and auth token when both are present: the two authenticate
+ * identically, so this is a matter of convenience, not of capability.
+ *
+ * It does not remove the need for an "AC…" account SID on the Messages API, since
+ * that one appears in the request URL. It does remove it for Verify, which is why
+ * the two are named separately here instead of being folded into one variable.
+ */
+function twilioAuth(): { username: string; password: string } | null {
+  const apiKey = process.env.TWILIO_API_KEY;
+  const apiSecret = process.env.TWILIO_API_SECRET;
+  if (apiKey && apiSecret) return { username: apiKey, password: apiSecret };
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  if (accountSid && authToken) return { username: accountSid, password: authToken };
+  return null;
+}
+
+/**
+ * `unconfigured` is deliberately distinct from `failed`: an unconfigured provider
+ * should leave the sender returning a *preview* result so the fallback ladder moves
+ * on, while a send that was really attempted must surface as an error and stop the
+ * ladder. Collapsing the two here would mean re-sending over a channel the tenant
+ * may have already received the message on.
+ */
+type TwilioOutcome =
+  | { state: "unconfigured" }
+  | { state: "sent"; sid?: string; status?: string }
+  | { state: "failed"; reason: string };
+
+/** Form-encoded POST to any Twilio REST endpoint, shared by the Messages and Verify APIs. */
+async function twilioPost(url: string, body: URLSearchParams): Promise<TwilioOutcome> {
+  const auth = twilioAuth();
+  if (!auth) return { state: "unconfigured" };
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${Buffer.from(`${auth.username}:${auth.password}`).toString("base64")}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body,
+  });
+
+  const payload = (await response.json().catch(() => null)) as {
+    sid?: string;
+    status?: string;
+    code?: number;
+    message?: string;
+  } | null;
+
+  if (!response.ok) {
+    const detail = payload?.message ? ` : ${payload.message}` : "";
+    return { state: "failed", reason: `Twilio ${payload?.code ?? response.status}${detail}` };
+  }
+  return { state: "sent", sid: payload?.sid, status: payload?.status };
+}
+
+function twilioFailure(channel: NotificationChannel, reason: string): NotificationResult {
+  return { channel, messageId: `twilio-error-${Date.now()}`, delivered: false, providerMessage: reason };
+}
+
+/**
  * Single HTTP call to the Twilio Messages API, shared by the SMS and WhatsApp
  * senders. Returns rather than throws so callers can escalate with a message
  * that names the Twilio error code — 21612 for a rejected sender, 21211 for a
@@ -370,28 +483,16 @@ async function twilioRequest(
   params: URLSearchParams,
 ): Promise<NotificationResult> {
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
-  const authToken = process.env.TWILIO_AUTH_TOKEN;
-  if (!accountSid || !authToken || !from) return preview(channel, "Twilio non configuré");
+  // Only an "AC…" account SID is legal in a URL; an "SK…" API key there fails with a
+  // bare 401 (error 70051) that reads like bad credentials when the credentials are
+  // fine. Checking the prefix turns that into a preview the ladder can move past.
+  if (!accountSid?.startsWith("AC") || !from) return preview(channel, "Twilio non configuré");
 
-  const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString("base64")}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: params,
-  });
-
-  if (!response.ok) {
-    const error = (await response.json().catch(() => null)) as { code?: number; message?: string } | null;
-    return {
-      channel,
-      messageId: `twilio-error-${Date.now()}`,
-      delivered: false,
-      providerMessage: `Twilio ${error?.code ?? response.status}${error?.message ? ` : ${error.message}` : ""}`,
-    };
-  }
-
-  const result = (await response.json()) as { sid?: string; status?: string };
-  return { channel, messageId: result.sid ?? `twilio-${Date.now()}`, delivered: true, providerMessage: result.status };
+  const outcome = await twilioPost(
+    `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
+    params,
+  );
+  if (outcome.state === "unconfigured") return preview(channel, "Twilio non configuré");
+  if (outcome.state === "failed") return twilioFailure(channel, outcome.reason);
+  return { channel, messageId: outcome.sid ?? `twilio-${Date.now()}`, delivered: true, providerMessage: outcome.status };
 }
