@@ -1,0 +1,1 @@
+ALTER TABLE "financial_transactions" DROP CONSTRAINT "financial_transactions_reverses_transaction_id_financial_transactions_id_fk";

@@ -1,0 +1,120 @@
+import { Suspense } from "react";
+import Link from "next/link";
+import { UsersRound } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { DataTable } from "@/components/ui/data-table";
+import { Skeleton } from "@/components/ui/skeleton";
+import { InviteMemberDialog } from "@/components/dashboard/invite-member-dialog";
+import { PageHeader } from "@/components/dashboard/page-header";
+import { teamColumns } from "../../team/columns";
+import { invitationColumns } from "../../team/invitation-columns";
+import { requireDashboardUser } from "@/lib/dashboard-guard";
+import { ServerApiError, serverApiFetch } from "@/lib/server-api";
+import type { ApiInvitation, ApiList, ApiUser } from "@/lib/dashboard-types";
+
+export const dynamic = "force-dynamic";
+
+export default async function TeamSettingsPage() {
+  await requireDashboardUser();
+
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        eyebrow="Agence"
+        title="Équipe"
+        description="Invitez des gérants et attribuez les rôles de votre agence."
+        action={<InviteMemberDialog />}
+      />
+      <Suspense fallback={
+        <>
+          <Card>
+            <CardHeader className="flex-row items-center justify-between space-y-0">
+              <div className="flex flex-col gap-2">
+                <CardDescription><Skeleton className="h-3 w-16" /></CardDescription>
+                <CardTitle><Skeleton className="h-6 w-24" /></CardTitle>
+              </div>
+              <Skeleton className="size-9 rounded-xl" />
+            </CardHeader>
+            <CardContent className="px-0">
+              <div className="flex flex-col gap-3 px-6 py-4">
+                {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-9 w-full" />)}
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex-row items-center justify-between space-y-0">
+              <div className="flex flex-col gap-2">
+                <CardDescription><Skeleton className="h-3 w-20" /></CardDescription>
+                <CardTitle><Skeleton className="h-6 w-24" /></CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="px-0">
+              <div className="flex flex-col gap-3 px-6 py-4">
+                {Array.from({ length: 2 }).map((_, index) => <Skeleton key={index} className="h-9 w-full" />)}
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      }>
+        <TeamSection />
+      </Suspense>
+    </div>
+  );
+}
+
+async function TeamSection() {
+  let users: ApiUser[] = [];
+  let forbidden = false;
+  try {
+    const response = await serverApiFetch<ApiList<ApiUser>>("/api/users");
+    users = response.data;
+  } catch (error) {
+    // Only an owner can list/manage the team: surface that as the reserved-card,
+    // but let real failures (DB outage, etc.) reach the app error handling.
+    if (error instanceof ServerApiError && error.status === 403) forbidden = true;
+    else throw error;
+  }
+
+  if (forbidden) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-center">
+          <p className="text-sm font-medium">Accès réservé au propriétaire.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Contactez le propriétaire de l’espace pour gérer les rôles.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const invitationsResponse = await serverApiFetch<ApiList<ApiInvitation>>("/api/users/invitations");
+  const invitations = invitationsResponse.data;
+
+  return (
+    <>
+      <Card>
+        <CardHeader className="flex-row items-center justify-between space-y-0">
+          <div>
+            <CardDescription>Comptes</CardDescription>
+            <CardTitle>{users.length} membre(s)</CardTitle>
+          </div>
+          <span className="flex size-9 items-center justify-center rounded-xl bg-secondary text-secondary-foreground"><UsersRound /></span>
+        </CardHeader>
+        <CardContent className="px-0">
+          <DataTable columns={teamColumns} data={users} emptyMessage="Aucun membre dans l’équipe." />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardDescription>Invitations</CardDescription>
+          <CardTitle>{invitations.length} en attente</CardTitle>
+        </CardHeader>
+        <CardContent className="px-0">
+          <DataTable columns={invitationColumns} data={invitations} emptyMessage="Aucune invitation en attente." />
+        </CardContent>
+      </Card>
+      <p className="text-sm text-muted-foreground">
+        Besoin de quitter cette agence ? <Link href="/settings/abonnement" className="font-semibold text-foreground underline-offset-4 hover:underline">Gérer mon accès</Link>.
+      </p>
+    </>
+  );
+}

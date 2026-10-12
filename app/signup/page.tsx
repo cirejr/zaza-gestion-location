@@ -1,6 +1,14 @@
+import { redirect } from "next/navigation";
 import AuthForm from "@/components/auth-form";
+import { isPortalSession } from "@/lib/auth";
+import { getServerSession } from "@/lib/session";
+
+export const dynamic = "force-dynamic";
 
 export default async function SignupPage({ searchParams }: { searchParams: Promise<{ invite?: string }> }) {
+  // Tenants register by phone at `/espace-locataire`; this form creates an
+  // owner/manager account. A portal identity must not land here.
+  if (isPortalSession(await getServerSession())) redirect("/espace-locataire");
   const params = await searchParams;
   return (
     <main className="flex min-h-screen items-center justify-center overflow-hidden bg-[#f6f8f4] px-4 py-10 sm:px-8">

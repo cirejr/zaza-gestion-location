@@ -2,19 +2,32 @@
 
 import { Download } from "lucide-react";
 import { createColumnHelper } from "@tanstack/react-table";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PayNowButton } from "@/components/portal/pay-now-button";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import { DataTableColumnHeader } from "@/components/ui/data-table-column-header";
 import type { DataTableFeatures } from "@/components/ui/data-table-features";
-import type { ApiPayment, PortalUtilityNote } from "@/lib/dashboard-types";
+import type { ApiPayment, PortalClaim, PortalTicket, PortalUtilityNote } from "@/lib/dashboard-types";
 import { formatCfa, formatDate } from "@/lib/dashboard-utils";
 
 const paymentColumnHelper = createColumnHelper<DataTableFeatures, ApiPayment>();
 const noteColumnHelper = createColumnHelper<DataTableFeatures, PortalUtilityNote>();
+const ticketColumnHelper = createColumnHelper<DataTableFeatures, PortalTicket>();
+const claimColumnHelper = createColumnHelper<DataTableFeatures, PortalClaim>();
 
 const utilityLabel = (type: string) => {
   const labels: Record<string, string> = { water: "Eau", electricity: "Électricité", security: "Sécurité", other: "Autres charges" };
+  return labels[type] ?? type;
+};
+
+const categoryLabel = (category: string) => {
+  const labels: Record<string, string> = { reparation: "Réparation", degradation: "Dégradation", autre: "Autre" };
+  return labels[category] ?? category;
+};
+
+const claimTypeLabel = (type: string) => {
+  const labels: Record<string, string> = { deposit: "Dépôt de garantie", reparation: "Réparation", autre: "Autre" };
   return labels[type] ?? type;
 };
 
@@ -102,5 +115,76 @@ export const paymentHistoryColumns = paymentColumnHelper.columns([
           </Button>
         </div>
       ) : null,
+  }),
+]);
+
+/** Demandes de travaux / dégradations déclarées par le locataire. */
+export const portalTicketColumns = ticketColumnHelper.columns([
+  ticketColumnHelper.accessor((row) => row.title, {
+    id: "title",
+    header: () => <span>Demande</span>,
+    cell: ({ row }) => (
+      <div className="min-w-0">
+        <span className="block truncate text-sm font-semibold">{row.original.title}</span>
+        <span className="block max-w-56 truncate text-xs text-muted-foreground">{row.original.description}</span>
+      </div>
+    ),
+  }),
+  ticketColumnHelper.accessor((row) => categoryLabel(row.category), {
+    id: "category",
+    header: () => <span>Type</span>,
+    cell: ({ row }) => <Badge variant="secondary" className="w-fit">{categoryLabel(row.original.category)}</Badge>,
+  }),
+  ticketColumnHelper.accessor((row) => row.priority, {
+    id: "priority",
+    header: () => <span>Priorité</span>,
+    cell: ({ row }) => <StatusBadge status={row.original.priority} />,
+  }),
+  ticketColumnHelper.accessor((row) => row.createdAt, {
+    id: "createdAt",
+    header: ({ column }) => <DataTableColumnHeader column={column} title="Date" />,
+    sortFn: "text",
+    cell: ({ row }) => <span className="text-xs text-muted-foreground">{formatDate(row.original.createdAt)}</span>,
+  }),
+  ticketColumnHelper.accessor((row) => row.status, {
+    id: "status",
+    header: () => <span>Statut</span>,
+    cell: ({ row }) => <StatusBadge status={row.original.status} />,
+  }),
+]);
+
+/** Réclamations soumises par le locataire. */
+export const portalClaimColumns = claimColumnHelper.columns([
+  claimColumnHelper.accessor((row) => row.title, {
+    id: "title",
+    header: () => <span>Réclamation</span>,
+    cell: ({ row }) => (
+      <div className="min-w-0">
+        <span className="block truncate text-sm font-semibold">{row.original.title}</span>
+        <span className="block max-w-56 truncate text-xs text-muted-foreground">{row.original.description}</span>
+      </div>
+    ),
+  }),
+  claimColumnHelper.accessor((row) => claimTypeLabel(row.type), {
+    id: "type",
+    header: () => <span>Type</span>,
+    cell: ({ row }) => <span className="text-xs">{claimTypeLabel(row.original.type)}</span>,
+  }),
+  claimColumnHelper.accessor((row) => (row.amount == null ? 0 : Number(row.amount)), {
+    id: "amount",
+    header: ({ column }) => <DataTableColumnHeader column={column} title="Montant" />,
+    sortFn: "alphanumeric",
+    cell: ({ row }) => (row.original.amount == null ? <span className="text-xs text-muted-foreground">—</span> : <span className="text-sm font-semibold">{formatCfa(row.original.amount)}</span>),
+  }),
+  claimColumnHelper.accessor((row) => row.createdAt, {
+    id: "createdAt",
+    header: ({ column }) => <DataTableColumnHeader column={column} title="Date" />,
+    sortFn: "text",
+    cell: ({ row }) => <span className="text-xs text-muted-foreground">{formatDate(row.original.createdAt)}</span>,
+  }),
+  claimColumnHelper.accessor((row) => row.status, {
+    id: "status",
+    header: () => <span>Statut</span>,
+    cell: ({ row }) => <StatusBadge status={row.original.status} />,
   }),
 ]);

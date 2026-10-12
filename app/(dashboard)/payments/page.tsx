@@ -8,7 +8,7 @@ import { PageHeader } from "@/components/dashboard/page-header";
 import { paymentColumns } from "./columns";
 import { serverApiFetch } from "@/lib/server-api";
 import { requireDashboardUser } from "@/lib/dashboard-guard";
-import type { ApiList, LeaseRow, PaymentRow, PaymentSummary } from "@/lib/dashboard-types";
+import type { ApiFinancialAccountWithBalance, ApiList, LeaseRow, PaymentRow, PaymentSummary } from "@/lib/dashboard-types";
 import { formatCfa } from "@/lib/dashboard-utils";
 
 export const dynamic = "force-dynamic";
@@ -51,9 +51,13 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
 }
 
 async function PaymentDialogAction() {
-  const leases = await serverApiFetch<ApiList<LeaseRow>>("/api/leases?limit=100");
+  const [leases, accounts] = await Promise.all([
+    serverApiFetch<ApiList<LeaseRow>>("/api/leases?limit=100"),
+    serverApiFetch<{ data: ApiFinancialAccountWithBalance[] }>("/api/accounts"),
+  ]);
   const leaseOptions = leases.data.map((row) => ({ value: row.lease.id, label: `${row.tenant.fullName} — ${row.apartment.unitNumber}` }));
-  return <CreatePaymentDialog leases={leaseOptions} />;
+  const accountOptions = accounts.data.map((account) => ({ value: account.id, label: account.name }));
+  return <CreatePaymentDialog leases={leaseOptions} accounts={accountOptions} />;
 }
 
 async function PaymentSummaryCards() {

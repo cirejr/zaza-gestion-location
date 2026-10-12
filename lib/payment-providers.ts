@@ -14,6 +14,12 @@ export type PaymentLinkInput = {
   customerPhone: string;
   returnUrl: string;
   notificationUrl?: string;
+  /** When true, creates a subscription checkout (monthly/annual) instead of a one-time payment. */
+  subscription?: {
+    plan: "monthly" | "annual";
+    /** Unique identifier for the subscription within the platform */
+    subscriptionId: string;
+  };
 };
 
 export type PaymentLink = {
@@ -92,6 +98,23 @@ export async function createPayTechLink(input: PaymentLinkInput): Promise<Paymen
 }
 
 export async function createPayDunyaLink(input: PaymentLinkInput): Promise<PaymentLink> {
+  const payload: Record<string, unknown> = {
+    amount: input.amount,
+    currency: input.currency ?? "XOF",
+    reference: input.reference,
+    name: input.customerName,
+    email: input.customerEmail,
+    phone_number: input.customerPhone,
+    return_url: input.returnUrl,
+    callback_url: input.notificationUrl,
+  };
+
+  // Add subscription-specific fields if mode is subscription
+  if (input.subscription) {
+    payload.subscription_plan = input.subscription.plan;
+    payload.subscription_id = input.subscription.subscriptionId;
+  }
+
   const response = await fetch(`${env("PAYDUNYA_API_URL")}/checkout/token`, {
     method: "POST",
     headers: {
@@ -100,20 +123,11 @@ export async function createPayDunyaLink(input: PaymentLinkInput): Promise<Payme
       "PAYDUNYA-KEY": env("PAYDUNYA_KEY"),
       "PAYDUNYA-SECRET": env("PAYDUNYA_SECRET"),
     },
-    body: JSON.stringify({
-      amount: input.amount,
-      currency: input.currency ?? "XOF",
-      reference: input.reference,
-      name: input.customerName,
-      email: input.customerEmail,
-      phone_number: input.customerPhone,
-      return_url: input.returnUrl,
-      callback_url: input.notificationUrl,
-    }),
+    body: JSON.stringify(payload),
   });
   const result = await readJson(response);
   const token = String(result.token ?? "");
-  if (!token) throw new PaymentProviderError("PayDunya n’a pas retourné de jeton de paiement.");
+  if (!token) throw new PaymentProviderError("PayDunya n'a pas retourné de jeton de paiement.");
   return { provider: "paydunya", token, paymentUrl: String(result.payment_url ?? `${input.returnUrl}?token=${encodeURIComponent(token)}`) };
 }
 

@@ -6,7 +6,7 @@ import { getDb } from "@/db";
 import { apartments, buildings, commonUtilities, leases, tenants, utilitySplits } from "@/db/schema";
 import { defaultChannel, deliverWithFallback, sendSmsMessage, sendTwilioUtilityNotice, sendUtilityNotice, utilityNoticeMessage, type NotificationChannel, type NotificationResult } from "@/lib/notifications";
 import { splitCommonCharge } from "@/lib/utility-split";
-import { getBuildingForActor, requireActor, requireRole } from "@/server/lib/auth-context";
+import { buildingAccessCondition, getBuildingForActor, requireActor, requireRole } from "@/server/lib/auth-context";
 import { pagination, parseBody, parseUuid, countValue } from "@/server/lib/http";
 import type { ApiEnv } from "@/server/session-middleware";
 
@@ -77,7 +77,7 @@ router.get("/utilities/overview", async (c) => {
   requireRole(actor, ["owner", "manager"]);
   const { page, limit, offset } = pagination(c);
   const query = c.req.query("q")?.trim();
-  const scope = [actor.role === "owner" ? eq(buildings.ownerId, actor.id) : eq(buildings.managerId, actor.id)];
+  const scope = [buildingAccessCondition(actor)];
   if (query) {
     scope.push(or(
       ilike(buildings.name, `%${query}%`),

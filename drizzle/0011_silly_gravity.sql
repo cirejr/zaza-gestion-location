@@ -1,0 +1,1 @@
+ALTER TABLE "financial_transactions" ADD COLUMN "attachment_url" text;

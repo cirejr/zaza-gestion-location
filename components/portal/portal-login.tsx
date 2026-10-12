@@ -18,6 +18,23 @@ function errorMessage(value: unknown) {
   return "Une erreur est survenue. Réessayez.";
 }
 
+/**
+ * Better Auth answers with developer-facing English identifiers — `Invalid OTP`,
+ * `OTP expired`, `Too many attempts`. They land untranslated on a public login
+ * screen, and `Too many attempts` in particular is terminal: it deletes the
+ * verification row, so the only way forward is to ask for a new code.
+ */
+function friendlyOtpError(value: unknown) {
+  const raw = errorMessage(value);
+  const key = raw.toLowerCase();
+  if (key.includes("too many attempts")) return "Trop de tentatives incorrectes. Demandez un nouveau code ci-dessous.";
+  if (key.includes("expired")) return "Ce code a expiré. Demandez-en un nouveau ci-dessous.";
+  if (key.includes("invalid otp")) return "Code incorrect. Vérifiez les 6 chiffres saisis.";
+  if (key.includes("not found")) return "Aucun code en attente pour ce numéro. Demandez un nouveau code ci-dessous.";
+  if (key.includes("required")) return "Saisissez votre numéro de téléphone.";
+  return raw;
+}
+
 /** Phone + WhatsApp OTP sign-in used for the tenant portal. */
 export function PortalLogin() {
   const router = useRouter();
@@ -57,13 +74,13 @@ export function PortalLogin() {
     try {
       const result = await authClient.phoneNumber.verify({ phoneNumber: phone, code: otp });
       if (result.error) {
-        setError(errorMessage(result.error));
+        setError(friendlyOtpError(result.error));
         return;
       }
       router.push("/espace-locataire");
       router.refresh();
     } catch (requestError) {
-      setError(errorMessage(requestError));
+      setError(friendlyOtpError(requestError));
     } finally {
       setLoading(false);
     }
@@ -127,6 +144,14 @@ export function PortalLogin() {
                   ? <><Spinner />Veuillez patienter...</>
                   : <>{otpSent ? "Vérifier le code" : "Recevoir le code"}<ArrowRight data-icon="inline-end" /></>}
               </Button>
+              {/* Without this the form can only get back to "request a code" by
+                  editing the phone number, which is not something a tenant who
+                  mistyped three digits would think to do. */}
+              {otpSent && (
+                <Button type="button" variant="ghost" size="sm" onClick={sendCode} disabled={loading} className="w-full">
+                  Code expiré ou non reçu ? Renvoyer
+                </Button>
+              )}
             </FieldGroup>
             {error && otpSent && <Alert variant="destructive"><AlertCircle /><AlertDescription>{error}</AlertDescription></Alert>}
             {error && !otpSent && <Alert variant="destructive"><AlertCircle /><AlertDescription>{error}</AlertDescription></Alert>}

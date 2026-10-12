@@ -1,11 +1,19 @@
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { phoneNumber } from "better-auth/plugins";
+import { organization, phoneNumber } from "better-auth/plugins";
 import { getDb } from "@/db";
-import { authAccounts, authSessions, authUsers, authVerifications } from "@/db/schema";
+import {
+  authAccounts,
+  authSessions,
+  authUsers,
+  authVerifications,
+  organizationInvitations,
+  organizationMembers,
+  organizations,
+} from "@/db/schema";
 import { resetPasswordEmail, sendEmail } from "@/lib/email";
-import { deliverWithFallback, sendSmsMessage, sendTwilioVerifyOtp, type NotificationResult } from "@/lib/notifications";
+import { deliverWithFallback, sendSmsMessage, sendTwilioVerifyNative, sendTwilioVerifyOtp, toE164, verifyOwnsCode, type NotificationResult } from "@/lib/notifications";
 
 /**
  * Auth is intentionally kept behind a factory: the UI can be previewed without
@@ -26,6 +34,37 @@ export function isPortalEmail(email: string | null | undefined) {
   return Boolean(email?.toLowerCase().endsWith(`@${PORTAL_EMAIL_DOMAIN}`));
 }
 
+type IdentityLike = { user: { email?: string | null | undefined } } | null | undefined;
+
+/**
+ * True when the session is a tenant-portal identity (phone + OTP).
+ *
+ * The dashboard and the portal share a single Better Auth session cookie, so
+ * "is someone signed in?" is the wrong question at either entry point — it is
+ * "signed in as *what*?". The portal used to accept any session, which let a
+ * signed-in owner reach `/espace-locataire` and be matched to a tenant record
+ * by phone, reading that tenant's lease, payments and receipts.
+ *
+ * A *present* session whose account has no email is treated as portal, mirroring
+ * `requireDashboardUser`, which sends it here rather than to the dashboard.
+ * Rejecting it in `resolvePortalTenant` would bounce a user between the two
+ * surfaces forever. An *absent* session, however, is an anonymous visitor, not a
+ * portal identity: `getServerSession()` returns `null` when nobody is signed in,
+ * and treating that as portal made `/login` and `/signup` redirect a logged-out
+ * manager straight to `/espace-locataire`, so the sign-in form was unreachable.
+ */
+export function isPortalSession(session: IdentityLike) {
+  if (!session?.user) return false;
+  const email = session.user.email;
+  return email == null || isPortalEmail(email);
+}
+
+/** True when the session is a real email identity: an owner or a manager. */
+export function isStaffSession(session: IdentityLike) {
+  const email = session?.user?.email;
+  return email != null && !isPortalEmail(email);
+}
+
 export function createAuth() {
   const appUrl = process.env.APP_URL ?? process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
   const database = process.env.DATABASE_URL
@@ -36,6 +75,9 @@ export function createAuth() {
           session: authSessions,
           account: authAccounts,
           verification: authVerifications,
+          organization: organizations,
+          member: organizationMembers,
+          invitation: organizationInvitations,
         },
       })
     : undefined;
@@ -70,6 +112,18 @@ export function createAuth() {
           getTempName: (phoneNumber) => phoneNumber,
         },
         sendOTP: async ({ phoneNumber: phone, code }) => {
+          // Dev escape hatch: print the code to the server log instead of sending
+          // it, so the whole tenant journey — request, verify, session cookie, lease,
+          // payment request — is testable with no provider configured and no cost.
+          //
+          // Two conditions, never one. A single flag is one stray deploy away from
+          // writing live tenant OTPs into logs, so production has to be ruled out
+          // explicitly rather than merely not setting the variable.
+          if (process.env.OTP_DEV_ECHO === "true" && process.env.NODE_ENV !== "production") {
+            console.log(`[dev:otp] ${phone} → ${code}   (code NON envoyé — OTP_DEV_ECHO actif)`);
+            return;
+          }
+
           // SMS only, and on purpose. Both WhatsApp senders exist in
           // lib/notifications.ts and are registered templates, but WhatsApp is not
           // ready: Meta is still in review and Twilio's authentication template has
@@ -89,11 +143,26 @@ export function createAuth() {
           const failures: NotificationResult[] = [];
           try {
             const { result, attempts } = await deliverWithFallback(
-              () => sendTwilioVerifyOtp({ to: phone, code }),
+              // With Verify owning the code, Better Auth's is discarded — nobody is
+              // ever sent it, and `server/lib/verify-bridge.ts` reconciles the two on
+              // the verify step. Otherwise Verify stays a pure pipe and carries our
+              // code as `CustomCode`.
+              verifyOwnsCode() ? () => sendTwilioVerifyNative({ to: phone }) : () => sendTwilioVerifyOtp({ to: phone, code }),
               [() => sendSmsMessage({ to: phone, message: `Votre code Naya est : ${code}. Il expire dans 5 minutes.` })],
             );
             failures.push(...attempts);
-            if (result.delivered) return;
+            if (result.delivered) {
+              // Log the verification sid, never the code. `messageId` is the
+              // `VE…` handle Twilio assigned, and it is the only way to tell a
+              // freshly issued verification from one Twilio reused for a second
+              // request on the same number — the difference between "the tenant
+              // never received this one" and "they received an older one" was
+              // impossible to establish from the logs before.
+              console.warn(
+                `[otp-send] number=${toE164(phone) ?? `invalide(${phone})`} provider=${result.channel} sid=${result.messageId} status=${result.providerMessage} verifyOwnsCode=${verifyOwnsCode()}`,
+              );
+              return;
+            }
           } catch (error) {
             console.error("OTP delivery error", error);
             throw new APIError("SERVICE_UNAVAILABLE", {
@@ -106,6 +175,11 @@ export function createAuth() {
           });
         },
       }),
+      // Agencies are Better Auth organizations. Invitations are sent from the
+      // API route (`/users/invitations`) rather than the plugin's
+      // `sendInvitationEmail` so the route can report delivery status back to
+      // the UI and fall back to a copyable link when email is not configured.
+      organization(),
     ],
   });
 }

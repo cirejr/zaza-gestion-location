@@ -334,6 +334,35 @@ function verifyChannel(): NotificationChannel {
 }
 
 /**
+ * The Verify service, or `undefined` when unset.
+ *
+ * A wrong SID here would build a nonsense URL, so anything but a "VA…" is
+ * treated as unset — same reasoning as the "AC…" account-SID guard.
+ */
+function verifyServiceSid(): string | undefined {
+  const sid = process.env.TWILIO_VERIFY_SERVICE_SID?.trim();
+  return sid?.startsWith("VA") ? sid : undefined;
+}
+
+/**
+ * True when Twilio Verify owns the OTP code instead of Better Auth.
+ *
+ * Verify only carries a code we generated if "Enable Custom Verification Code"
+ * is enabled on the service, and a trial account cannot enable it. So on trial
+ * the only way to deliver an OTP the server can actually verify is to let Verify
+ * issue the code and check it back through `VerificationCheck`.
+ *
+ * Opt-in rather than automatic, because the cost is real: Better Auth still
+ * stores a code nobody received, and something has to copy the verified code
+ * into that row before its own comparison runs (see `server/lib/verify-bridge.ts`).
+ * Better Auth remains the only owner of the session either way — this changes who
+ * owns the *code*, not who signs the tenant in.
+ */
+export function verifyOwnsCode(): boolean {
+  return process.env.TWILIO_VERIFY_OWNS_CODE === "true";
+}
+
+/**
  * OTP over Twilio Verify, used purely as a delivery transport.
  *
  * Verify is normally the component that generates, stores and checks the code. Here
@@ -356,9 +385,8 @@ function verifyChannel(): NotificationChannel {
  */
 export async function sendTwilioVerifyOtp(input: { to: string; code: string }): Promise<NotificationResult> {
   const channel = verifyChannel();
-  const serviceSid = process.env.TWILIO_VERIFY_SERVICE_SID?.trim();
-  // A wrong SID here would build a nonsense URL, so treat anything but "VA…" as unset.
-  if (!serviceSid?.startsWith("VA")) return preview(channel, "Service Verify non configuré");
+  const serviceSid = verifyServiceSid();
+  if (!serviceSid) return preview(channel, "Service Verify non configuré");
 
   const to = toE164(input.to);
   if (!to) return invalidRecipient(channel, input.to);
@@ -376,6 +404,76 @@ export async function sendTwilioVerifyOtp(input: { to: string; code: string }): 
     delivered: true,
     providerMessage: outcome.status ?? "pending",
   };
+}
+
+/**
+ * OTP over Twilio Verify, with Verify issuing the code itself.
+ *
+ * Differs from `sendTwilioVerifyOtp` in the one way that matters on a trial
+ * account: no `CustomCode`. Better Auth's code is discarded here — it was never
+ * sent to anybody — and `checkTwilioVerifyCode` is what closes the loop.
+ *
+ * The caller must only reach this when `verifyOwnsCode()` is true, because
+ * Better Auth's stored row and the code the tenant types are different codes
+ * until the bridge copies one into the other.
+ */
+export async function sendTwilioVerifyNative(input: { to: string }): Promise<NotificationResult> {
+  const channel = verifyChannel();
+  const serviceSid = verifyServiceSid();
+  if (!serviceSid) return preview(channel, "Service Verify non configuré");
+
+  const to = toE164(input.to);
+  if (!to) return invalidRecipient(channel, input.to);
+
+  const outcome = await twilioPost(
+    `https://verify.twilio.com/v2/Services/${serviceSid}/Verifications`,
+    new URLSearchParams({ To: to, Channel: channel }),
+  );
+  if (outcome.state === "unconfigured") return preview(channel, "Twilio non configuré");
+  if (outcome.state === "failed") return twilioFailure(channel, outcome.reason);
+  // "pending" is Twilio accepting the message for delivery, not a delivery receipt.
+  return {
+    channel,
+    messageId: outcome.sid ?? `twilio-verify-${Date.now()}`,
+    delivered: true,
+    providerMessage: outcome.status ?? "pending",
+  };
+}
+
+/**
+ * Ask Verify whether the code a tenant typed is the one it issued.
+ *
+ * `null` means the question could not be asked — no service, no credentials, a
+ * malformed number, or an unreadable response — and the caller must fall back to
+ * Better Auth's own comparison rather than lock every tenant out over a provider
+ * hiccup. `false`, by contrast, is a real answer from Verify and must be honoured:
+ * falling back there would let a wrong code through on a guess.
+ */
+export async function checkTwilioVerifyCode(input: { to: string; code: string }): Promise<boolean | null> {
+  const serviceSid = verifyServiceSid();
+  const auth = twilioAuth();
+  if (!serviceSid || !auth) return null;
+
+  const to = toE164(input.to);
+  if (!to) return null;
+
+  try {
+    const response = await fetch(`https://verify.twilio.com/v2/Services/${serviceSid}/VerificationCheck`, {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${auth.username}:${auth.password}`).toString("base64")}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({ To: to, Code: input.code }),
+    });
+    const payload = (await response.json().catch(() => null)) as { valid?: boolean } | null;
+    // A 404 means "no verification pending for this number", which carries no
+    // verdict — Better Auth's own "OTP not found" is the better message.
+    if (!response.ok || typeof payload?.valid !== "boolean") return null;
+    return payload.valid;
+  } catch {
+    return null;
+  }
 }
 
 /** Rent reminder over Twilio WhatsApp, via a `relance_loyer` content template. */

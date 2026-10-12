@@ -4,7 +4,6 @@ import { AlertCircle, ArrowRight, Eye, EyeOff, KeyRound, LockKeyhole, Mail, Spar
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ApiError, apiFetch } from "@/lib/api";
 import { authClient } from "@/lib/auth-client";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -47,15 +46,16 @@ export default function AuthForm({ mode, inviteToken }: { mode: AuthMode; invite
         setError(errorMessage(result.error));
         return;
       }
-      // Bind a pending team invitation to the freshly created account.
-      if (mode === "signup" && inviteToken) {
-        try {
-          await apiFetch("/api/users/invitations/accept", { method: "POST", body: JSON.stringify({ token: inviteToken }) });
-        } catch (acceptError) {
-          toast.error(acceptError instanceof ApiError ? acceptError.message : "Invitation non appliquée. Contactez l’administrateur.");
+      // Bind a pending team invitation to the account. Better Auth accepts the
+      // invitation by id and, as a side effect, joins the agency and makes it
+      // the active organization.
+      if (inviteToken) {
+        const accepted = await authClient.organization.acceptInvitation({ invitationId: inviteToken });
+        if (accepted.error) {
+          toast.error(accepted.error.message ?? "Invitation non appliquée. Contactez l’administrateur.");
         }
       }
-      router.push("/");
+      router.push(mode === "signup" && !inviteToken ? "/onboarding" : "/");
       router.refresh();
     } catch (requestError) {
       setError(errorMessage(requestError));

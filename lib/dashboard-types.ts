@@ -1,5 +1,22 @@
 export type ApiList<T> = { data: T[]; pagination?: { page?: number; limit?: number; total: number } };
-export type ApiUser = { id: string; name: string; email: string; role: "owner" | "manager" | "tenant"; phone?: string | null };
+export type ApiOrganizationSummary = { id: string; name: string; slug: string | null; logo: string | null; onboardedAt: string | null };
+export type ApiOrganizationDetail = ApiOrganizationSummary & {
+  contactEmail: string | null;
+  contactPhone: string | null;
+  address: string | null;
+  city: string | null;
+  country: string;
+  website: string | null;
+  description: string | null;
+  legalName: string | null;
+  registrationNumber: string | null;
+  taxId: string | null;
+  defaultManagementFeeBasis: string | null;
+  defaultFeePercent: string | null;
+  defaultFeeAmount: string | null;
+  role: "owner" | "manager" | "tenant";
+};
+export type ApiUser = { id: string; name: string; email: string; role: "owner" | "manager" | "tenant"; phone?: string | null; organization?: ApiOrganizationSummary | null; needsOnboarding?: boolean };
 export type ApiBuilding = { id: string; name: string; address: string; city?: string | null; country?: string; unitCount: number; photoUrls?: string[]; createdAt?: string };
 export type ApiApartment = { id: string; buildingId: string; unitNumber: string; floor?: number | null; bedrooms: number; areaSqm?: number | null; rentAmount: string; status: "occupied" | "vacant" | "maintenance" };
 /** Building with its apartments embedded — returned by `/api/buildings/overview`. */
@@ -9,6 +26,58 @@ export type ApiLease = { id: string; apartmentId: string; tenantId: string; star
 export type ApiPayment = { id: string; leaseId: string; amount: string; paymentMethod: string; transactionRef?: string | null; status: string; paidAt?: string | null; receiptUrl?: string | null; createdAt: string };
 export type ApiUtility = { id: string; buildingId: string; type: string; supplier?: string | null; totalAmount: string; period: string; splitStatus: string; invoiceUrl?: string | null; createdAt: string };
 export type ApiTicket = { id: string; buildingId: string; apartmentId?: string | null; title: string; description: string; cost?: string | null; status: string; priority: string; createdAt: string };
+export type ApiClaim = { id: string; tenantId: string; apartmentId?: string | null; buildingId?: string | null; title: string; description: string; photoUrl?: string | null; amount?: string | null; type: string; status: string; createdAt: string };
+export type ApiProspect = {
+  id: string;
+  fullName: string;
+  phone: string;
+  whatsappNumber?: string | null;
+  email?: string | null;
+  preferredContact?: string | null;
+  notes?: string | null;
+  propertyType?: string | null;
+  location?: string | null;
+  budgetMin?: string | null;
+  budgetMax?: string | null;
+  bedrooms?: number | null;
+  furnished?: boolean | null;
+  moveInDate?: string | null;
+  amenities?: string[];
+  requirements?: string | null;
+  status: string;
+  createdBy: string;
+  convertedTenantId?: string | null;
+  convertedLeaseId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+export type ApiProspectActivity = { id: string; prospectId: string; kind: string; actorId?: string | null; fromStatus?: string | null; toStatus?: string | null; apartmentId?: string | null; note?: string | null; createdAt: string };
+export type ApiProspectVisit = { id: string; prospectId: string; apartmentId?: string | null; scheduledAt: string; status: string; notes?: string | null; outcome?: string | null; createdById?: string | null; createdAt: string; updatedAt: string };
+export type ApiProspectReservation = { id: string; prospectId: string; apartmentId?: string | null; startDate: string; endDate: string; status: string; notes?: string | null; createdById?: string | null; createdAt: string; updatedAt: string };
+export type ApiProspectDetail = ApiProspect & {
+  creator?: { id: string; name: string } | null;
+  activities: ApiProspectActivity[];
+  visits: ApiProspectVisit[];
+  reservations: ApiProspectReservation[];
+};
+export type ApiProspectMatch = {
+  apartment: ApiApartment;
+  building: ApiBuilding;
+  score: number;
+  reasons: string[];
+  issues: string[];
+  availableNow: boolean;
+  availableAtMoveIn: boolean;
+};
+/** Reverse lookup: prospects ranked for one apartment (`?apartmentId=`). */
+export type ApiApartmentProspectMatch = {
+  prospect: ApiProspect;
+  score: number;
+  reasons: string[];
+  issues: string[];
+  availableNow: boolean;
+  availableAtMoveIn: boolean;
+};
 export type ApiInvitation = {
   id: string;
   email: string;
@@ -33,8 +102,11 @@ export type UtilitiesOverviewResponse = {
 export type PaymentRow = { payment: ApiPayment; apartment: { id: string; unitNumber: string }; building: { id: string; name: string }; tenant: { id: string; fullName: string; phone?: string | null; whatsappNumber?: string | null } };
 export type LeaseRow = { lease: ApiLease; apartment: ApiApartment; building: ApiBuilding; tenant: ApiTenant };
 export type TicketRow = { ticket: ApiTicket; building: ApiBuilding; apartment?: ApiApartment | null };
+export type ClaimRow = { claim: ApiClaim; building: ApiBuilding; apartment?: ApiApartment | null; tenant: ApiTenant };
 export type UtilityRow = ApiUtility & { building?: ApiBuilding | null };
 export type PortalUtilityNote = { id: string; type: string; period: string; amount: string; unitNumber: string; sentAt?: string | null };
+export type PortalTicket = { id: string; title: string; description: string; category: string; priority: string; photoUrl?: string | null; cost?: string | null; status: string; createdAt: string };
+export type PortalClaim = { id: string; title: string; description: string; type: string; amount?: string | null; photoUrl?: string | null; status: string; createdAt: string };
 export type PortalMe = {
   data: {
     tenant: ApiTenant & { userId?: string | null };
@@ -44,6 +116,178 @@ export type PortalMe = {
     pendingPayments: ApiPayment[];
     paymentHistory: ApiPayment[];
     utilityNotes: PortalUtilityNote[];
+    tickets: PortalTicket[];
+    claims: PortalClaim[];
     stats: { totalDue: number; paidCount: number; paidTotal: number };
   };
+};
+
+export type FinancialAccountType = "wave" | "orange_money" | "mobile_money" | "bank" | "cash" | "other";
+export type FinancialTransactionKind = "rent" | "income" | "expense" | "transfer" | "deposit" | "deposit_refund" | "settlement" | "adjustment" | "reversal";
+
+export type ApiFinancialAccount = {
+  id: string;
+  name: string;
+  type: FinancialAccountType;
+  provider?: string | null;
+  holder?: string | null;
+  maskedReference?: string | null;
+  openingBalance: string;
+  openingDate?: string | null;
+  buildingId?: string | null;
+  status: "active" | "archived";
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+export type ApiFinancialAccountWithBalance = ApiFinancialAccount & {
+  balance: number;
+  inflow: number;
+  outflow: number;
+  movementCount: number;
+  transactions?: ApiFinancialTransaction[];
+};
+export type ApiAccountReconciliation = {
+  id: string;
+  accountId: string;
+  statementBalance: string;
+  recordedBalance: string;
+  asOf: string;
+  notes?: string | null;
+  createdById?: string | null;
+  createdAt: string;
+};
+export type ApiFinancialTransaction = {
+  id: string;
+  buildingId?: string | null;
+  apartmentId?: string | null;
+  leaseId?: string | null;
+  tenantId?: string | null;
+  accountId?: string | null;
+  counterpartAccountId?: string | null;
+  transferBatchId?: string | null;
+  kind: FinancialTransactionKind;
+  flow: "in" | "out";
+  amount: string;
+  period?: string | null;
+  postedAt: string;
+  category?: string | null;
+  description?: string | null;
+  reference?: string | null;
+  supplier?: string | null;
+  attachmentUrl?: string | null;
+  chargeableTo?: "owner" | "agency" | null;
+  paymentId?: string | null;
+  reversesTransactionId?: string | null;
+  settlementId?: string | null;
+  status: "posted" | "reversed";
+  createdAt: string;
+  accountName?: string | null;
+  buildingName?: string | null;
+  unitNumber?: string | null;
+  tenantName?: string | null;
+};
+export type AccountingOverviewApartment = {
+  apartmentId: string | null;
+  unitNumber: string;
+  rentBilled: number;
+  rentCollected: number;
+  expenses: number;
+};
+export type AccountingOverviewBuilding = {
+  buildingId: string;
+  buildingName: string;
+  ownerKind: "self" | "third_party";
+  rentBilled: number;
+  rentCollected: number;
+  otherIncome: number;
+  expensesOwner: number;
+  expensesAgency: number;
+  managementFee: number;
+  ownerPayable: number;
+  remitted: number;
+  remaining: number;
+  apartments: AccountingOverviewApartment[];
+};
+export type AccountingOverview = {
+  period: string;
+  buildingId?: string | null;
+  rentBilled: number;
+  rentCollected: number;
+  outstanding: number;
+  otherIncome: number;
+  expenses: number;
+  expensesOwner: number;
+  expensesAgency: number;
+  netOperatingIncome: number;
+  managementFeeEarned: number;
+  ownerPayable: number;
+  remitted: number;
+  ownerRemaining: number;
+  byBuilding: AccountingOverviewBuilding[];
+  accounts: Array<{ id: string; name: string; type: FinancialAccountType; balance: number; buildingId?: string | null }>;
+  series: Array<{ period: string; rentCollected: number; otherIncome: number; expenses: number; net: number }>;
+};
+export type ApiOwnerStatementLine = {
+  id: string;
+  statementId: string;
+  lineType: "rent_billed" | "rent_collected" | "other_income" | "expense_owner" | "expense_agency" | "management_fee" | "adjustment" | "net";
+  label: string;
+  amount: string;
+  sortOrder: number;
+};
+export type ApiOwnerStatement = {
+  id: string;
+  buildingId: string;
+  period: string;
+  status: "draft" | "finalized";
+  rentBilled: string;
+  rentCollected: string;
+  otherIncome: string;
+  expensesOwner: string;
+  expensesAgency: string;
+  managementFee: string;
+  adjustments: string;
+  netPayable: string;
+  remitted: string;
+  remaining: string;
+  basis?: string | null;
+  finalizedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  buildingName?: string;
+  ownerKind?: "self" | "third_party";
+  lines?: ApiOwnerStatementLine[];
+  settlements?: ApiOwnerSettlement[];
+};
+export type ApiOwnerSettlement = {
+  id: string;
+  buildingId: string;
+  period: string;
+  statementId?: string | null;
+  recipientName: string;
+  recipientPhone?: string | null;
+  amount: string;
+  paidAt: string;
+  accountId?: string | null;
+  reference?: string | null;
+  notes?: string | null;
+  createdAt: string;
+  buildingName?: string | null;
+  accountName?: string | null;
+};
+export type ManagementFeeBasis = "percent_collected" | "percent_due" | "fixed" | "percent_collected_plus_fixed";
+export type ApiManagementArrangement = {
+  id: string;
+  buildingId: string;
+  startDate: string;
+  endDate?: string | null;
+  basis: ManagementFeeBasis;
+  feePercent?: string | null;
+  feeAmount?: string | null;
+  createdById?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  buildingName?: string;
+  ownerKind?: "self" | "third_party";
 };

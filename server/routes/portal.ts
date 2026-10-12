@@ -3,9 +3,10 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { getDb } from "@/db";
-import { apartments, buildings, commonUtilities, leases, payments, tenants, utilitySplits } from "@/db/schema";
+import { apartments, buildings, claims, commonUtilities, leases, maintenanceTickets, payments, tenants, utilitySplits } from "@/db/schema";
 import { createPaymentLink, PaymentProviderError, type PaymentProviderName } from "@/lib/payment-providers";
 import { createReceiptPdf } from "@/lib/pdf";
+import { loadAgencyBranding } from "@/server/lib/organization";
 import { notifyBuildingTeam } from "@/server/lib/notify";
 import { resolvePortalTenant } from "@/server/lib/tenant-auth";
 import { parseBody, parseUuid } from "@/server/lib/http";
@@ -39,6 +40,8 @@ router.get("/portal/me", async (c) => {
   let pendingPayments: Array<typeof payments.$inferSelect> = [];
   let paymentHistory: Array<typeof payments.$inferSelect> = [];
   let utilityNotes: Array<{ id: string; type: string; period: string; amount: string; unitNumber: string; sentAt: Date | null }> = [];
+  let tickets: Array<typeof maintenanceTickets.$inferSelect> = [];
+  let tenantClaims: Array<typeof claims.$inferSelect> = [];
 
   if (context) {
     const rows = await db
@@ -57,6 +60,11 @@ router.get("/portal/me", async (c) => {
       .where(eq(utilitySplits.apartmentId, context.apartment.id))
       .orderBy(desc(commonUtilities.createdAt));
     utilityNotes = splits.map((split) => ({ ...split, type: String(split.type), amount: String(split.amount) }));
+
+    [tickets, tenantClaims] = await Promise.all([
+      db.select().from(maintenanceTickets).where(eq(maintenanceTickets.apartmentId, context.apartment.id)).orderBy(desc(maintenanceTickets.createdAt)),
+      db.select().from(claims).where(eq(claims.tenantId, tenant.id)).orderBy(desc(claims.createdAt)),
+    ]);
   }
 
   const stats = {
@@ -74,9 +82,107 @@ router.get("/portal/me", async (c) => {
       pendingPayments,
       paymentHistory,
       utilityNotes,
+      tickets,
+      claims: tenantClaims,
       stats,
     },
   });
+});
+
+/** Shared resolver: the tenant's active lease, failing loudly when there is none. */
+async function requirePortalLease(tenantId: string) {
+  const context = await portalLease(tenantId);
+  if (!context) throw new HTTPException(409, { message: "Aucun bail actif. Contactez votre gestionnaire." });
+  return context;
+}
+
+const portalTicketInput = z.object({
+  title: z.string().trim().min(3).max(180),
+  description: z.string().trim().min(3).max(10000),
+  category: z.enum(["reparation", "degradation", "autre"]).default("reparation"),
+  priority: z.enum(["low", "normal", "urgent"]).default("normal"),
+  photoUrl: z.string().url().nullable().optional(),
+  cost: z.number().min(0).nullable().optional(),
+});
+
+/** A tenant reports a repair to schedule or a degradation in their own unit. */
+router.post("/portal/tickets", async (c) => {
+  const tenant = await resolvePortalTenant(c);
+  const data = await parseBody(c, portalTicketInput);
+  const context = await requirePortalLease(tenant.id);
+  const [ticket] = await getDb().insert(maintenanceTickets).values({
+    buildingId: context.building.id,
+    apartmentId: context.apartment.id,
+    title: data.title,
+    description: data.description,
+    category: data.category,
+    priority: data.priority,
+    photoUrl: data.photoUrl ?? null,
+    cost: data.cost == null ? null : String(data.cost),
+    status: "pending",
+  }).returning();
+  await notifyBuildingTeam(context.building, {
+    type: "ticket.created",
+    title: `Nouvelle demande locataire : ${data.title}`,
+    body: `${tenant.fullName} · ${context.apartment.unitNumber}`,
+    href: "/tickets",
+  });
+  return c.json({ data: ticket }, 201);
+});
+
+router.get("/portal/tickets", async (c) => {
+  const tenant = await resolvePortalTenant(c);
+  const context = await portalLease(tenant.id);
+  if (!context) return c.json({ data: [] });
+  const rows = await getDb()
+    .select()
+    .from(maintenanceTickets)
+    .where(eq(maintenanceTickets.apartmentId, context.apartment.id))
+    .orderBy(desc(maintenanceTickets.createdAt));
+  return c.json({ data: rows });
+});
+
+const portalClaimInput = z.object({
+  title: z.string().trim().min(3).max(180),
+  description: z.string().trim().min(3).max(10000),
+  type: z.enum(["deposit", "reparation", "autre"]).default("autre"),
+  amount: z.number().min(0).nullable().optional(),
+  photoUrl: z.string().url().nullable().optional(),
+});
+
+/** A tenant files a claim (deposit, repair reimbursement, other). */
+router.post("/portal/claims", async (c) => {
+  const tenant = await resolvePortalTenant(c);
+  const data = await parseBody(c, portalClaimInput);
+  const context = await requirePortalLease(tenant.id);
+  const [claim] = await getDb().insert(claims).values({
+    tenantId: tenant.id,
+    apartmentId: context.apartment.id,
+    buildingId: context.building.id,
+    title: data.title,
+    description: data.description,
+    type: data.type,
+    amount: data.amount == null ? null : String(data.amount),
+    photoUrl: data.photoUrl ?? null,
+    status: "pending",
+  }).returning();
+  await notifyBuildingTeam(context.building, {
+    type: "claim.created",
+    title: `Nouvelle réclamation : ${data.title}`,
+    body: `${tenant.fullName} · ${context.apartment.unitNumber}`,
+    href: "/claims",
+  });
+  return c.json({ data: claim }, 201);
+});
+
+router.get("/portal/claims", async (c) => {
+  const tenant = await resolvePortalTenant(c);
+  const rows = await getDb()
+    .select()
+    .from(claims)
+    .where(eq(claims.tenantId, tenant.id))
+    .orderBy(desc(claims.createdAt));
+  return c.json({ data: rows });
 });
 
 /** A payment belongs to the portal tenant if its lease is one of theirs. */
@@ -146,6 +252,7 @@ router.get("/portal/payments/:id/receipt.pdf", async (c) => {
     amount: `${Number(payment.amount).toLocaleString("fr-FR")} FCFA`,
     method: payment.paymentMethod,
     transactionRef: payment.transactionRef,
+    branding: await loadAgencyBranding(building.organizationId),
   });
   await getDb().update(payments).set({ receiptUrl: `/api/portal/payments/${id}/receipt.pdf` }).where(eq(payments.id, id));
   return new Response(pdf as BodyInit, {

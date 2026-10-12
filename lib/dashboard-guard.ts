@@ -24,7 +24,11 @@ export const requireDashboardUser = cache(async (): Promise<ApiUser> => {
   // accounts with no email at all belong in the tenant portal, never here.
   if (!session.user.email || isPortalEmail(session.user.email)) redirect("/espace-locataire");
   const response = await serverApiFetch<{ data: ApiUser }>("/api/users/me");
+  const user = response.data;
   // Tenant-role accounts use the tenant portal instead of the management dashboard.
-  if (response.data.role === "tenant") redirect("/espace-locataire");
-  return response.data;
+  if (user.role === "tenant") redirect("/espace-locataire");
+  // The agency owner must finish the first-run wizard before reaching the
+  // dashboard; managers and invited users are not gated.
+  if (user.needsOnboarding) redirect("/onboarding");
+  return user;
 });

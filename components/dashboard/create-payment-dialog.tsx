@@ -10,7 +10,7 @@ const methodLabels: Record<string, string> = {
   bank_transfer: "Virement",
 };
 
-export function CreatePaymentDialog({ leases }: { leases: SelectOption[] }) {
+export function CreatePaymentDialog({ leases, accounts = [] }: { leases: SelectOption[]; accounts?: SelectOption[] }) {
   const fields: DialogField[] = [
     { type: "select", name: "leaseId", label: "Bail", required: true, placeholder: "Choisir un bail", options: leases },
     { type: "amount", name: "amount", label: "Montant (FCFA)", min: 1, required: true },
@@ -32,6 +32,13 @@ export function CreatePaymentDialog({ leases }: { leases: SelectOption[] }) {
         { value: "failed", label: "Échoué" },
       ],
     },
+    { type: "month", name: "period", label: "Période couverte (AAAA-MM)" },
+    {
+      type: "select",
+      name: "accountId",
+      label: "Compte d’encaissement",
+      options: [{ value: "__none__", label: "Non renseigné" }, ...accounts],
+    },
     { type: "date", name: "paidAt", label: "Date du paiement" },
     { type: "text", name: "transactionRef", label: "Référence / transaction" },
   ];
@@ -44,11 +51,15 @@ export function CreatePaymentDialog({ leases }: { leases: SelectOption[] }) {
       fields={fields}
       endpoint="/api/payments"
       successMessage="Paiement enregistré."
-      transform={(payload) => ({
-        ...payload,
-        paidAt: payload.paidAt ? String(payload.paidAt) : null,
-        transactionRef: payload.transactionRef ? String(payload.transactionRef) : null,
-      })}
+      transform={(payload) => {
+        const { accountId, ...rest } = payload;
+        return {
+          ...rest,
+          ...(accountId && accountId !== "__none__" ? { accountId } : {}),
+          paidAt: payload.paidAt ? String(payload.paidAt) : null,
+          transactionRef: payload.transactionRef ? String(payload.transactionRef) : null,
+        };
+      }}
     />
   );
 }

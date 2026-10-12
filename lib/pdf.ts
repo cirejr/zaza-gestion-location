@@ -10,12 +10,14 @@ export type ReceiptPdfData = {
   method: string;
   transactionRef?: string | null;
   period?: string;
+  branding?: PdfBranding | null;
 };
 
 export type ReportPdfData = {
   title: string;
   period: string;
   rows: Array<[string, string]>;
+  branding?: PdfBranding | null;
 };
 
 export type LeaseContractPdfData = {
@@ -34,7 +36,62 @@ export type LeaseContractPdfData = {
   depositAmount: string;
   startDate: string;
   endDate?: string | null;
+  branding?: PdfBranding | null;
 };
+
+/**
+ * The agency identity printed on every generated document. `logo` is optional
+ * and already decoded: the caller owns fetching the bytes and deciding the
+ * format, so the PDF layer stays free of storage concerns. When no `name` is
+ * supplied the historical wordmark is used, keeping documents identical for
+ * agencies that have not configured a brand yet.
+ */
+export type PdfBranding = {
+  name?: string | null;
+  logo?: { bytes: Uint8Array; type: "png" | "jpeg" } | null;
+};
+
+const DEFAULT_BRAND = "NAYA";
+
+/** The agency name to print, falling back to the product wordmark. */
+export function pdfBrandName(branding?: PdfBranding | null) {
+  const name = branding?.name?.trim();
+  return name ? name : DEFAULT_BRAND;
+}
+
+/** Shrink long agency names so the header wordmark never overflows. */
+function brandFontSize(name: string) {
+  if (name.length <= 14) return 24;
+  if (name.length <= 22) return 18;
+  if (name.length <= 34) return 14;
+  return 11;
+}
+
+/** Draw the header wordmark (and logo, when supplied) at the top-left. */
+async function drawBrand(
+  document: PDFDocument,
+  page: ReturnType<PDFDocument["addPage"]>,
+  branding: PdfBranding | null | undefined,
+  font: Awaited<ReturnType<PDFDocument["embedFont"]>>,
+) {
+  const name = pdfBrandName(branding);
+  let textX = 48;
+  if (branding?.logo) {
+    try {
+      const image = branding.logo.type === "png" ? await document.embedPng(branding.logo.bytes) : await document.embedJpg(branding.logo.bytes);
+      const max = 44;
+      const scale = Math.min(max / image.width, max / image.height, 1);
+      const width = image.width * scale;
+      const height = image.height * scale;
+      page.drawImage(image, { x: 48, y: 786 + (max - height) / 2, width, height });
+      textX = 48 + width + 12;
+    } catch {
+      // A corrupt or unsupported image must never fail document generation; the
+      // wordmark alone still identifies the agency.
+    }
+  }
+  page.drawText(safeText(name), { x: textX, y: 796, size: brandFontSize(name), font, color: rgb(0.79, 0.94, 0.42) });
+}
 
 function safeText(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\u202f|\u00a0/g, " ").replace(/[^\x20-\x7E]/g, "?");
@@ -58,7 +115,7 @@ export async function createReceiptPdf(data: ReceiptPdfData) {
   const muted = rgb(0.36, 0.45, 0.42);
 
   page.drawRectangle({ x: 0, y: 742, width: 595, height: 100, color: green });
-  page.drawText("NAYA", { x: 48, y: 796, size: 24, font: bold, color: rgb(0.79, 0.94, 0.42) });
+  await drawBrand(document, page, data.branding, bold);
   page.drawText("RECU DE LOYER", { x: 48, y: 766, size: 12, font: regular, color: rgb(0.88, 0.95, 0.91) });
   page.drawText(data.receiptNumber, { x: 420, y: 780, size: 11, font: regular, color: rgb(1, 1, 1) });
 
@@ -80,7 +137,7 @@ export async function createReceiptPdf(data: ReceiptPdfData) {
   ].filter(Boolean), regular, 10, 48, y, 20);
 
   page.drawText("Merci de conserver ce document.", { x: 48, y: 90, size: 10, font: regular, color: muted });
-  page.drawText("Naya - Gestion locative", { x: 400, y: 90, size: 9, font: regular, color: muted });
+  page.drawText(safeText(`${pdfBrandName(data.branding)} - Gestion locative`), { x: 400, y: 90, size: 9, font: regular, color: muted });
   return document.save();
 }
 
@@ -94,7 +151,7 @@ export async function createLeaseContractPdf(data: LeaseContractPdfData) {
   const muted = rgb(0.36, 0.45, 0.42);
 
   page.drawRectangle({ x: 0, y: 742, width: 595, height: 100, color: green });
-  page.drawText("NAYA", { x: 48, y: 796, size: 24, font: bold, color: rgb(0.79, 0.94, 0.42) });
+  await drawBrand(document, page, data.branding, bold);
   page.drawText("CONTRAT DE LOCATION", { x: 48, y: 766, size: 12, font: regular, color: rgb(0.88, 0.95, 0.91) });
   page.drawText(data.contractNumber, { x: 420, y: 780, size: 11, font: regular, color: rgb(1, 1, 1) });
   page.drawText(data.issuedAt, { x: 420, y: 762, size: 9, font: regular, color: rgb(0.9, 0.95, 0.93) });
@@ -161,8 +218,8 @@ export async function createLeaseContractPdf(data: LeaseContractPdfData) {
     "Signature du locataire: ______________________",
   ], regular, 10, 48, y, 22);
 
-  page.drawText("Document genere automatiquement par Naya.", { x: 48, y: 80, size: 9, font: regular, color: muted });
-  page.drawText("Naya - Gestion locative", { x: 400, y: 80, size: 9, font: regular, color: muted });
+  page.drawText(safeText(`Document genere automatiquement par ${pdfBrandName(data.branding)}.`), { x: 48, y: 80, size: 9, font: regular, color: muted });
+  page.drawText(safeText(`${pdfBrandName(data.branding)} - Gestion locative`), { x: 400, y: 80, size: 9, font: regular, color: muted });
   return document.save();
 }
 
@@ -173,7 +230,7 @@ export async function createReportPdf(data: ReportPdfData) {
   const bold = await document.embedFont(StandardFonts.HelveticaBold);
   const green = rgb(0.07, 0.24, 0.21);
   page.drawRectangle({ x: 0, y: 742, width: 595, height: 100, color: green });
-  page.drawText("NAYA", { x: 48, y: 796, size: 24, font: bold, color: rgb(0.79, 0.94, 0.42) });
+  await drawBrand(document, page, data.branding, bold);
   page.drawText(safeText(data.title), { x: 48, y: 766, size: 13, font: regular, color: rgb(0.88, 0.95, 0.91) });
   page.drawText(data.period, { x: 430, y: 780, size: 10, font: regular, color: rgb(1, 1, 1) });
   let y = 680;

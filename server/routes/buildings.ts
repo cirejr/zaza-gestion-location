@@ -4,7 +4,7 @@ import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { apartments, buildings } from "@/db/schema";
-import { getBuildingForActor, requireActor, requireRole } from "@/server/lib/auth-context";
+import { buildingAccessCondition, getBuildingForActor, requireActor, requireRole } from "@/server/lib/auth-context";
 import { pagination, parseBody, parseUuid, countValue, type RequestContext } from "@/server/lib/http";
 import type { ApiEnv } from "@/server/session-middleware";
 
@@ -27,7 +27,7 @@ router.get("/buildings", async (c) => {
   requireRole(actor, ["owner", "manager"]);
   const { page, limit, offset } = pagination(c);
   const query = c.req.query("q")?.trim();
-  const conditions = [actor.role === "owner" ? eq(buildings.ownerId, actor.id) : eq(buildings.managerId, actor.id)];
+  const conditions = [buildingAccessCondition(actor)];
   if (query) {
     conditions.push(or(ilike(buildings.name, `%${query}%`), ilike(buildings.address, `%${query}%`))!);
   }
@@ -49,6 +49,7 @@ router.post("/buildings", async (c) => {
     ...data,
     managerId: data.managerId ?? null,
     ownerId: actor.id,
+    organizationId: actor.organizationId,
   }).returning();
   return c.json({ data: building }, 201);
 });
@@ -58,7 +59,7 @@ router.get("/buildings/overview", async (c) => {
   requireRole(actor, ["owner", "manager"]);
   const { page, limit, offset } = pagination(c);
   const query = c.req.query("q")?.trim();
-  const conditions = [actor.role === "owner" ? eq(buildings.ownerId, actor.id) : eq(buildings.managerId, actor.id)];
+  const conditions = [buildingAccessCondition(actor)];
   if (query) conditions.push(or(ilike(buildings.name, `%${query}%`), ilike(buildings.address, `%${query}%`))!);
   const where = and(...conditions);
   const db = getDb();

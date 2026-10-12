@@ -1,6 +1,17 @@
+import { redirect } from "next/navigation";
 import AuthForm from "@/components/auth-form";
+import { isPortalSession } from "@/lib/auth";
+import { getServerSession } from "@/lib/session";
 
-export default function LoginPage() {
+export const dynamic = "force-dynamic";
+
+/**
+ * Owner/manager sign-in. A tenant-portal identity is already signed in
+ * (both surfaces share one session cookie) and has nothing to do here, so it
+ * goes to its own space instead of being offered an email form it cannot use.
+ */
+export default async function LoginPage() {
+  if (isPortalSession(await getServerSession())) redirect("/espace-locataire");
   return (
     <main className="flex min-h-screen items-center justify-center overflow-hidden bg-[#f6f8f4] px-4 py-10 sm:px-8">
       <div className="absolute -left-40 -top-40 h-[520px] w-[520px] rounded-full bg-[#e5f2e8] blur-3xl" />

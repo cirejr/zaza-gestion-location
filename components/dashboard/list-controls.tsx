@@ -13,11 +13,16 @@ export type ListFilter = {
   /** Query-string parameter filled by this control (e.g. `status`, `priority`). */
   name: string;
   label: string;
-  options: ListFilterOption[];
+  /** Choices for a `select` filter. Ignored for input types. */
+  options?: ListFilterOption[];
   /** Currently selected value — omit or pass `""` for "all". */
   value?: string;
   /** Label of the "all" choice, e.g. "Tous les statuts". */
   allLabel?: string;
+  /** Control type. `select` (default) renders a dropdown; other types render inputs. */
+  type?: "select" | "text" | "number" | "date";
+  /** Placeholder for input types. */
+  placeholder?: string;
 };
 
 /**
@@ -76,13 +81,14 @@ export function ListControls({
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={placeholder} className="pl-9" />
         </form>
-        {filters.map((filter) => {
-          const allLabel = filter.allLabel ?? "Tous";
-          return (
+        {filters.map((filter) =>
+          filter.type && filter.type !== "select" ? (
+            <FilterField key={filter.name} filter={filter} navigate={navigate} />
+          ) : (
             <Select
               key={filter.name}
               value={filter.value ? filter.value : ALL}
-              items={[{ value: ALL, label: allLabel }, ...filter.options]}
+              items={[{ value: ALL, label: filter.allLabel ?? "Tous" }, ...(filter.options ?? [])]}
               onValueChange={(value) => navigate({ [filter.name]: value === ALL ? undefined : String(value), page: undefined })}
             >
               <SelectTrigger className="w-full sm:w-44" aria-label={filter.label}>
@@ -90,8 +96,8 @@ export function ListControls({
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
-                  <SelectItem value={ALL}>{allLabel}</SelectItem>
-                  {filter.options.map((option) => (
+                  <SelectItem value={ALL}>{filter.allLabel ?? "Tous"}</SelectItem>
+                  {(filter.options ?? []).map((option) => (
                     <SelectItem key={option.value} value={option.value}>
                       {option.label}
                     </SelectItem>
@@ -99,8 +105,8 @@ export function ListControls({
                 </SelectGroup>
               </SelectContent>
             </Select>
-          );
-        })}
+          ),
+        )}
       </div>
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <span>
@@ -126,5 +132,50 @@ export function ListControls({
         </Button>
       </div>
     </div>
+  );
+}
+
+/**
+ * Text / number / date filter. Commits on blur or Enter so typing does not
+ * fire a navigation per keystroke, and resets the page when the value changes.
+ */
+function FilterField({ filter, navigate }: { filter: ListFilter; navigate: (params: Record<string, string | undefined>) => void }) {
+  const [draft, setDraft] = useState(filter.value ?? "");
+
+  useEffect(() => {
+    setDraft(filter.value ?? "");
+  }, [filter.value]);
+
+  function commit() {
+    const value = draft.trim();
+    if (value === (filter.value ?? "").trim()) return;
+    navigate({ [filter.name]: value || undefined, page: undefined });
+  }
+
+  return (
+    <Input
+      type={filter.type ?? "text"}
+      inputMode={filter.type === "number" ? "numeric" : undefined}
+      aria-label={filter.label}
+      placeholder={filter.placeholder ?? filter.label}
+      value={draft}
+      onChange={(event) => {
+        setDraft(event.target.value);
+        // A native date picker sets the whole value at once and may not blur,
+        // so commit immediately for dates instead of waiting for blur/Enter.
+        if (filter.type === "date") {
+          const value = event.target.value.trim();
+          if (value !== (filter.value ?? "").trim()) navigate({ [filter.name]: value || undefined, page: undefined });
+        }
+      }}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          commit();
+        }
+      }}
+      className="w-full sm:w-40"
+    />
   );
 }

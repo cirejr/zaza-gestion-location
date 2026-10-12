@@ -11,8 +11,10 @@
     "start": "next start",
     "db:migrate": "node --env-file=.env.local ./node_modules/drizzle-kit/bin.cjs migrate",
     "db:generate": "drizzle-kit generate",
+    "db:seed": "bun --env-file=.env.local scripts/seed.ts",
     "lint": "tsc --noEmit",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.1.11",

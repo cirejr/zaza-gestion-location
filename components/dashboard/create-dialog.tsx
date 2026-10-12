@@ -37,6 +37,8 @@ export type DialogField =
   | { type: "number"; name: string; label: string; placeholder?: string; min?: number; step?: string; required?: boolean }
   | { type: "amount"; name: string; label: string; placeholder?: string; min?: number; required?: boolean }
   | { type: "date"; name: string; label: string; required?: boolean }
+  | { type: "month"; name: string; label: string; required?: boolean }
+  | { type: "textarea"; name: string; label: string; placeholder?: string; required?: boolean }
   | { type: "select"; name: string; label: string; options: SelectOption[]; placeholder?: string; required?: boolean }
   | { type: "upload"; name: string; label: string; accept?: string; required?: boolean; hint?: string };
 
@@ -88,11 +90,11 @@ function amountError(fields: DialogField[], values: Values): string | null {
 }
 
 /** Upload a file straight to the private uploads bucket via a presigned URL. */
-export async function uploadFile(file: File): Promise<string> {
+export async function uploadFile(file: File, directory = "files"): Promise<string> {
   const contentType = file.type || "application/octet-stream";
   const presigned = await apiFetch<{ data: { key: string; url: string; method: string } }>("/api/uploads/presign", {
     method: "POST",
-    body: JSON.stringify({ filename: file.name, contentType }),
+    body: JSON.stringify({ filename: file.name, contentType, directory }),
   });
   const response = await fetch(presigned.data.url, {
     method: presigned.data.method,
@@ -102,6 +104,16 @@ export async function uploadFile(file: File): Promise<string> {
   if (!response.ok) throw new Error("Upload failed.");
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   return `${origin}/api/uploads/${presigned.data.key}`;
+}
+
+/**
+ * Label shown in the upload chip. Object keys are namespaced by the uploader's
+ * id (`<uuid>/<folder>/<filename>`) so the API can authorize a read without a
+ * database lookup; the namespace is storage detail, not something to put in
+ * front of the user.
+ */
+function displayFileName(url: string) {
+  return url.replace("/api/uploads/", "").split("/").slice(1).join("/") || url.replace("/api/uploads/", "");
 }
 
 function initialValues(fields: DialogField[], defaults?: Values): Values {
@@ -247,7 +259,7 @@ export function CreateDialog({
                         <>
                           <span className="flex h-8 flex-1 items-center gap-2 truncate rounded-lg border border-border bg-muted/50 px-2.5 text-xs text-muted-foreground">
                             <UploadCloud className="size-3.5 shrink-0" />
-                            <span className="truncate">{current.replace("/api/uploads/", "")}</span>
+                            <span className="truncate">{displayFileName(current)}</span>
                           </span>
                           <Button type="button" variant="outline" size="icon-sm" aria-label="Retirer le fichier" onClick={() => setValue(field.name, "")}>
                             <X />
@@ -275,8 +287,23 @@ export function CreateDialog({
                   </Field>
                 );
               }
+              if (field.type === "textarea") {
+                return (
+                  <Field key={field.name}>
+                    <FieldLabel>{field.label}</FieldLabel>
+                    <textarea
+                      required={fieldIsRequired(field)}
+                      placeholder={field.placeholder}
+                      value={typeof values[field.name] === "string" ? (values[field.name] as string) : ""}
+                      onChange={(event) => setValue(field.name, event.target.value)}
+                      className="min-h-20 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    />
+                  </Field>
+                );
+              }
               const isNumber = field.type === "number";
               const isDate = field.type === "date";
+              const isMonth = field.type === "month";
               const stringValue = typeof values[field.name] === "string" ? (values[field.name] as string) : "";
               return (
                 <Field key={field.name}>
@@ -290,7 +317,7 @@ export function CreateDialog({
                     />
                   ) : (
                     <Input
-                      type={isNumber ? "number" : isDate ? "date" : "text"}
+                      type={isNumber ? "number" : isDate ? "date" : isMonth ? "month" : "text"}
                       required={fieldIsRequired(field)}
                       min={isNumber ? field.min : undefined}
                       step={isNumber ? field.step : undefined}

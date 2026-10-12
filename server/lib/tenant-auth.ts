@@ -2,6 +2,7 @@ import { eq, or, sql } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import { getDb } from "@/db";
 import { tenants, type Tenant } from "@/db/schema";
+import { isPortalSession } from "@/lib/auth";
 import type { RequestContext } from "@/server/lib/http";
 
 /** Normalized phone key: digits only, leading zeros stripped, last 12 kept. */
@@ -28,10 +29,21 @@ export function phoneMatches(left: string, right: string) {
  * 2. Self-serve phone match: the verified phone on the Better Auth account is
  *    matched to the tenant record (phone or WhatsApp number) and the link is
  *    persisted for fast lookups afterwards.
+ *
+ * The identity is checked before the lookup, not after. The page guard in
+ * `app/espace-locataire/page.tsx` already sends owners and managers away, but
+ * that guard lives in the page: this runs on the API, which is reachable
+ * directly. A manager's account carries a real phone number, and step 2 is a
+ * phone match — so without this check any owner could call `/api/portal/me`
+ * and, if their number happened to match a tenant record, read that tenant's
+ * lease, payments and receipts.
  */
 export async function resolvePortalTenant(c: RequestContext): Promise<Tenant> {
   const session = c.get("session");
   if (!session?.user) throw new HTTPException(401, { message: "Authentication required." });
+  if (!isPortalSession(session)) {
+    throw new HTTPException(403, { message: "Cet espace est réservé aux locataires. Connectez-vous depuis /login pour gérer votre portefeuille." });
+  }
   const db = getDb();
 
   if (session.user.id) {

@@ -3,11 +3,13 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { getDb } from "@/db";
-import { apartments, buildings, leases, payments, tenants } from "@/db/schema";
+import { apartments, buildings, financialAccounts, leases, notifications, payments, subscriptions, tenants } from "@/db/schema";
 import { createPaymentLink, PaymentProviderError, type PaymentProviderName } from "@/lib/payment-providers";
 import { createReceiptPdf } from "@/lib/pdf";
 import { buildingAccessCondition, getBuildingForActor, requireActor, requireRole } from "@/server/lib/auth-context";
+import { mirrorRentPaymentSafe } from "@/server/lib/ledger";
 import { notifyBuildingTeam } from "@/server/lib/notify";
+import { loadAgencyBranding } from "@/server/lib/organization";
 import { pagination, parseBody, parseUuid, countValue } from "@/server/lib/http";
 import type { ApiEnv } from "@/server/session-middleware";
 
@@ -20,6 +22,10 @@ const paymentInput = z.object({
   transactionRef: z.string().trim().max(180).nullable().optional(),
   status: z.enum(["pending", "paid", "failed", "refunded"]).default("paid"),
   paidAt: z.coerce.date().nullable().optional(),
+  // Billing period (YYYY-MM) the payment covers, and the account the money
+  // landed in. Both feed the accounting ledger.
+  period: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).nullable().optional(),
+  accountId: z.string().uuid().nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
 });
 
@@ -167,13 +173,21 @@ router.post("/payments", async (c) => {
   const [apartment] = await db.select().from(apartments).where(eq(apartments.id, lease.apartmentId)).limit(1);
   if (!apartment) throw new HTTPException(404, { message: "Apartment not found." });
   await getBuildingForActor(apartment.buildingId, actor);
+  if (data.accountId) {
+    const [account] = await db.select({ id: financialAccounts.id }).from(financialAccounts).where(eq(financialAccounts.id, data.accountId)).limit(1);
+    if (!account) throw new HTTPException(404, { message: "Compte introuvable." });
+  }
   const [payment] = await db.insert(payments).values({
     ...data,
     amount: String(data.amount),
     paidAt: data.paidAt ?? (data.status === "paid" ? new Date() : null),
     transactionRef: data.transactionRef ?? null,
+    period: data.period ?? null,
+    accountId: data.accountId ?? null,
     notes: data.notes ?? null,
   }).returning();
+  // Mirror a rent payment that is recorded as settled straight away.
+  if (payment && payment.status === "paid") await mirrorRentPaymentSafe(payment);
   return c.json({ data: payment }, 201);
 });
 
@@ -197,6 +211,8 @@ router.patch("/payments/:id", async (c) => {
     ...(amount == null ? {} : { amount: String(amount) }),
     ...(data.paidAt === undefined ? {} : { paidAt: data.paidAt }),
   }).where(eq(payments.id, id)).returning();
+  // Confirming a pending payment to paid mirrors it into the ledger.
+  if (payment && payment.status === "paid") await mirrorRentPaymentSafe(payment);
   return c.json({ data: payment });
 });
 
@@ -225,6 +241,7 @@ router.get("/payments/:id/receipt.pdf", async (c) => {
     amount: `${Number(context.payment.amount).toLocaleString("fr-FR")} FCFA`,
     method: context.payment.paymentMethod,
     transactionRef: context.payment.transactionRef,
+    branding: await loadAgencyBranding(actor.organizationId),
   });
   await getDb().update(payments).set({ receiptUrl: `/api/payments/${id}/receipt.pdf` }).where(eq(payments.id, id));
   return new Response(pdf as BodyInit, {
@@ -253,10 +270,99 @@ router.post("/webhooks/payments/:provider", async (c) => {
       ...(status === "paid" ? { paidAt: new Date() } : {}),
     }).where(eq(payments.transactionRef, ref)).returning();
     if (!payment) throw new HTTPException(404, { message: "Payment transaction not found." });
+    if (payment.status === "paid") await mirrorRentPaymentSafe(payment);
     await notifyPaymentReceived(payment.id, status);
     return c.json({ received: true, paymentId: payment.id, status });
   }
 
+  // PayDunya webhook: handle both one-time payments and subscription activations.
+  // PayDunya sends: type_event, ref_command, custom_field (contains subscriptionId)
+  if (provider === "paydunya") {
+    const form = await c.req.parseBody();
+    const typeEvent = String(form.type_event ?? "");
+    const refCommand = String(form.ref_command ?? "");
+    const customField = String(form.custom_field ?? "");
+
+    const db = getDb();
+
+    // Try to match the reference to an existing payment/subscription record
+    const [payment] = await db
+      .select({ payment: payments, subscriptionId: subscriptions.id })
+      .from(payments)
+      .leftJoin(subscriptions, eq(payments.id, subscriptions.id))
+      .where(eq(payments.transactionRef, refCommand))
+      .limit(1);
+
+    let status: "pending" | "paid" | "failed" | "refunded" | "cancelled" = "paid";
+    if (typeEvent === "sale_canceled") status = "cancelled";
+    if (typeEvent === "sale_refunded") status = "refunded";
+    if (typeEvent === "sale_failed" || typeEvent === "error") status = "failed";
+
+    if (!payment) {
+      // Not a standard payment; could be a subscription activation.
+      // Try matching via custom_field (subscription ID)
+      const [sub] = await db
+        .select()
+        .from(subscriptions)
+        .where(eq(subscriptions.paydunyaReference, refCommand))
+        .limit(1);
+
+      if (sub) {
+        // Activate or update the subscription
+        const subscriptionStatusMap: Record<string, "active" | "expired" | "cancelled"> = {
+          paid: "active",
+          cancelled: "cancelled",
+          refunded: "expired",
+          failed: "expired",
+        };
+        const newStatus = subscriptionStatusMap[status] ?? "expired" as const;
+        await db
+          .update(subscriptions)
+          .set({
+            status: newStatus,
+            currentPeriodStart: newStatus === "active" ? new Date() : null,
+            currentPeriodEnd: newStatus === "active"
+              ? new Date(Date.now() + (sub.plan === "monthly" ? 30 : 365) * 24 * 60 * 60 * 1000)
+              : null,
+            cancelAtPeriodEnd: false,
+            updatedAt: new Date(),
+          })
+          .where(eq(subscriptions.id, sub.id));
+
+        // Note: For SaaS subscriptions, the subscription record is the primary
+        // tracking mechanism. A separate payment record is not created since
+        // there is no associated lease. The subscription status is updated
+        // directly from the webhook verification.
+        // Notify via the existing notify function (best-effort)
+        try {
+          await getDb().insert(notifications).values({
+            userId: sub.agencyId,
+            type: "subscription.activated",
+            title: `Abonnement ${sub.plan === "monthly" ? "mensuel" : "annuel"} activé`,
+            body: `Votre abonnement Naya est maintenant actif.`,
+          });
+        } catch {}
+
+        return c.json({ received: true, subscriptionId: sub.id, status, activated: newStatus === "active" });
+      }
+
+      throw new HTTPException(404, { message: "Payment transaction not found and no matching subscription." });
+    }
+
+    // Standard payment update (one-time rent, etc.)
+    const [updated] = await db.update(payments).set({
+      status,
+      ...(status === "paid" ? { paidAt: new Date() } : {}),
+    }).where(eq(payments.id, payment.payment.id)).returning();
+
+    if (!updated) throw new HTTPException(404, { message: "Payment transaction not found." });
+
+    if (updated.status === "paid") await mirrorRentPaymentSafe(updated);
+    await notifyPaymentReceived(updated.id, status);
+    return c.json({ received: true, paymentId: updated.id, status });
+  }
+
+  // Generic webhook handler (existing behavior for other providers)
   const expectedSecret = process.env.PAYMENT_WEBHOOK_SECRET;
   if (expectedSecret && c.req.header("x-webhook-secret") !== expectedSecret) {
     throw new HTTPException(401, { message: "Invalid webhook signature." });
@@ -272,6 +378,7 @@ router.post("/webhooks/payments/:provider", async (c) => {
     ...(data.status === "paid" ? { paidAt: data.paidAt ?? new Date() } : {}),
   }).where(eq(payments.transactionRef, data.transactionRef)).returning();
   if (!payment) throw new HTTPException(404, { message: "Payment transaction not found." });
+  if (payment.status === "paid") await mirrorRentPaymentSafe(payment);
   await notifyPaymentReceived(payment.id, payment.status);
   return c.json({ received: true, paymentId: payment.id, status: payment.status });
 });

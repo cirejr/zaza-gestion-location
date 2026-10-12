@@ -5,15 +5,21 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   Activity,
+  BookOpenText,
   Building2,
   ClipboardList,
+  CreditCard,
   FileText,
+  HandCoins,
   LayoutDashboard,
   LogOut,
   Menu,
+  PiggyBank,
   Receipt,
+  ScrollText,
   Settings,
   Users,
+  UserSearch,
   WalletCards,
   Wrench,
   Droplets,
@@ -24,6 +30,7 @@ import {
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 import type { ApiUser } from "@/lib/dashboard-types";
+import { AgencySwitcher } from "@/components/dashboard/agency-switcher";
 import { CommandPalette, type CommandItem } from "@/components/dashboard/command-palette";
 import { NotificationBell } from "@/components/dashboard/notification-bell";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -64,6 +71,7 @@ const navGroups: Array<{ label: string; items: Array<{ label: string; href: stri
       { label: "Immeubles & unités", href: "/buildings", icon: Building2 },
       { label: "Locataires", href: "/tenants", icon: Users },
       { label: "Baux", href: "/leases", icon: FileText },
+      { label: "Prospects & locations", href: "/prospects", icon: UserSearch },
     ],
   },
   {
@@ -72,19 +80,35 @@ const navGroups: Array<{ label: string; items: Array<{ label: string; href: stri
       { label: "Paiements", href: "/payments", icon: WalletCards },
       { label: "Factures communes", href: "/utilities", icon: Droplets },
       { label: "Incidents & travaux", href: "/tickets", icon: Wrench },
+      { label: "Réclamations", href: "/claims", icon: ClipboardList },
+    ],
+  },
+  {
+    label: "Comptabilité",
+    items: [
+      { label: "Vue comptable", href: "/comptabilite", icon: PiggyBank },
+      { label: "Grand livre", href: "/comptabilite/grand-livre", icon: BookOpenText },
+      { label: "Relevés propriétaires", href: "/comptabilite/releves", icon: HandCoins },
+      { label: "Mandats de gestion", href: "/comptabilite/mandats", icon: ScrollText },
     ],
   },
   {
     label: "Analyses",
+    items: [{ label: "Rapports", href: "/reports", icon: Activity }],
+  },
+  {
+    label: "Agence",
     items: [
-      { label: "Rapports", href: "/reports", icon: Activity },
-      { label: "Équipe", href: "/team", icon: UsersRound },
+      { label: "Équipe", href: "/settings/equipe", icon: UsersRound },
+      { label: "Abonnement", href: "/settings/abonnement", icon: CreditCard },
     ],
   },
 ];
 
 function isActivePath(pathname: string, href: string) {
-  return href === "/" ? pathname === "/" : pathname.startsWith(href);
+  // Exact match, or a child path — so `/comptabilite` does not stay highlighted
+  // while the user is on `/comptabilite/grand-livre`.
+  return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
 }
 
 function initials(name: string) {
@@ -93,7 +117,9 @@ function initials(name: string) {
 
 export function DashboardShell({ user, children }: { user: ApiUser; children: React.ReactNode }) {
   const pathname = usePathname();
-  const current = navGroups.flatMap((group) => group.items).find((item) => isActivePath(pathname, item.href));
+  const current =
+    navGroups.flatMap((group) => group.items).find((item) => isActivePath(pathname, item.href)) ??
+    (pathname.startsWith("/settings") ? { label: "Paramètres", href: "/settings", icon: Settings } : undefined);
   const [commandOpen, setCommandOpen] = useState(false);
 
   async function signOut() {
@@ -180,6 +206,7 @@ export function DashboardShell({ user, children }: { user: ApiUser; children: Re
             <div><p className="text-[10px] font-semibold text-muted-foreground">Naya / {current?.label ?? "Pilotage"}</p><h1 className="text-lg font-bold tracking-tight">{current?.label ?? "Vue d’ensemble"}</h1></div>
           </div>
           <div className="flex items-center gap-2">
+            <AgencySwitcher currentOrganizationId={user.organization?.id} />
             <Button variant="outline" size="icon" aria-label="Rechercher" title="Rechercher (⌘K)" onClick={() => setCommandOpen(true)}><span className="text-xs">⌘K</span></Button>
             <NotificationBell />
             <Separator orientation="vertical" className="mx-1 hidden h-6 sm:block" />

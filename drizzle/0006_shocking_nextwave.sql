@@ -1,0 +1,1 @@
+ALTER TABLE "maintenance_tickets" ADD COLUMN "category" varchar(32) DEFAULT 'reparation' NOT NULL;

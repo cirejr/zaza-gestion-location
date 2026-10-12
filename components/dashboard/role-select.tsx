@@ -14,7 +14,10 @@ const roleLabels: Record<ApiUser["role"], string> = {
   tenant: "Locataire",
 };
 
-const roleOptions = (Object.keys(roleLabels) as ApiUser["role"][]).map((role) => ({
+// Only staff roles are assignable: the agency membership is a Better Auth
+// organization role, which has no notion of "tenant" (tenants live in the
+// tenant portal, not in the staff team).
+const roleOptions = (["owner", "manager"] as ApiUser["role"][]).map((role) => ({
   value: role,
   label: roleLabels[role],
 }));

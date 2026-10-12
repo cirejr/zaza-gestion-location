@@ -4,15 +4,21 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { splitCommonCharge } from "@/lib/utility-split";
 import { requireSession, sessionMiddleware, type ApiEnv } from "@/server/session-middleware";
+import { verifyCodeBridge } from "@/server/lib/verify-bridge";
 import apartmentsRoutes from "@/server/routes/apartments";
+import accountsRoutes from "@/server/routes/accounts";
 import buildingsRoutes from "@/server/routes/buildings";
 import leasesRoutes from "@/server/routes/leases";
 import notificationsRoutes from "@/server/routes/notifications";
+import organizationRoutes from "@/server/routes/organization";
 import paymentsRoutes from "@/server/routes/payments";
 import portalRoutes from "@/server/routes/portal";
 import reportsRoutes from "@/server/routes/reports";
 import tenantsRoutes from "@/server/routes/tenants";
 import ticketsRoutes from "@/server/routes/tickets";
+import claimsRoutes from "@/server/routes/claims";
+import prospectsRoutes from "@/server/routes/prospects";
+import subscriptionsRoutes from "@/server/routes/subscriptions";
 import uploadsRoutes from "@/server/routes/uploads";
 import utilitiesRoutes from "@/server/routes/utilities";
 import usersRoutes from "@/server/routes/users";
@@ -25,11 +31,13 @@ app.get("/health", (c) => c.json({ ok: true, service: "naya-api" }));
 
 // Better Auth is exposed by the same Hono application as the rest of the API.
 // The request URL is preserved so Better Auth can resolve /api/auth/* correctly.
+// The bridge runs first, and only while Twilio Verify owns the OTP code.
+app.use("/auth/*", verifyCodeBridge);
 app.all("/auth/*", (c) => auth.handler(c.req.raw));
 
 app.get("/me", sessionMiddleware, (c) => c.json({ session: c.get("session") }));
 
-for (const path of ["/buildings", "/apartments", "/tenants", "/leases", "/payments", "/utilities", "/tickets", "/reports", "/notifications", "/users", "/uploads", "/portal"]) {
+for (const path of ["/buildings", "/apartments", "/tenants", "/leases", "/payments", "/utilities", "/tickets", "/claims", "/prospects", "/accounts", "/reports", "/notifications", "/users", "/uploads", "/portal", "/subscriptions", "/organization"]) {
   app.use(path, sessionMiddleware, requireSession);
   app.use(`${path}/*`, sessionMiddleware, requireSession);
 }
@@ -46,6 +54,7 @@ app.post("/utilities/split-preview", async (c) => {
   return c.json({ allocations, total: allocations.reduce((sum, item) => sum + item.amount, 0) });
 });
 
+app.route("/subscriptions", subscriptionsRoutes);
 app.route("/", buildingsRoutes);
 app.route("/", apartmentsRoutes);
 app.route("/", tenantsRoutes);
@@ -54,7 +63,11 @@ app.route("/", paymentsRoutes);
 app.route("/", portalRoutes);
 app.route("/", utilitiesRoutes);
 app.route("/", ticketsRoutes);
+app.route("/", claimsRoutes);
+app.route("/", prospectsRoutes);
+app.route("/", accountsRoutes);
 app.route("/", notificationsRoutes);
+app.route("/", organizationRoutes);
 app.route("/", reportsRoutes);
 app.route("/", uploadsRoutes);
 app.route("/", usersRoutes);

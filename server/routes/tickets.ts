@@ -4,7 +4,7 @@ import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { apartments, buildings, maintenanceTickets } from "@/db/schema";
-import { getBuildingForActor, requireActor, requireRole } from "@/server/lib/auth-context";
+import { buildingAccessCondition, getBuildingForActor, requireActor, requireRole } from "@/server/lib/auth-context";
 import { notifyBuildingTeam } from "@/server/lib/notify";
 import { pagination, parseBody, parseUuid, countValue } from "@/server/lib/http";
 import type { ApiEnv } from "@/server/session-middleware";
@@ -37,7 +37,7 @@ router.get("/tickets", async (c) => {
   const actor = await requireActor(c);
   requireRole(actor, ["owner", "manager"]);
   const { page, limit, offset } = pagination(c);
-  const conditions = [actor.role === "owner" ? eq(buildings.ownerId, actor.id) : eq(buildings.managerId, actor.id)];
+  const conditions = [buildingAccessCondition(actor)];
   const buildingId = c.req.query("buildingId");
   const status = c.req.query("status");
   const priority = c.req.query("priority");

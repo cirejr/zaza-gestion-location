@@ -2,6 +2,7 @@
 
 import { createColumnHelper } from "@tanstack/react-table";
 import { EditApartmentDialog } from "@/components/dashboard/edit-dialogs";
+import { ApartmentProspectMatches } from "@/components/dashboard/apartment-prospect-matches";
 import { RowAction } from "@/components/dashboard/row-action";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import { DataTableColumnHeader } from "@/components/ui/data-table-column-header";
@@ -49,6 +50,7 @@ export const apartmentColumns = columnHelper.columns([
     header: () => <span className="block text-right">Actions</span>,
     cell: ({ row }) => (
       <div className="flex items-center justify-end gap-1">
+        <ApartmentProspectMatches apartmentId={row.original.id} unitNumber={row.original.unitNumber} />
         <EditApartmentDialog apartment={row.original} />
         <RowAction
           endpoint={`/api/apartments/${row.original.id}`}

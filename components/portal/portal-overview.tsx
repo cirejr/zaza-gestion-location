@@ -1,9 +1,10 @@
-import { Droplets, FileText, Home, ReceiptText, WalletCards } from "lucide-react";
+import { ClipboardList, Droplets, FileText, Home, ReceiptText, WalletCards, Wrench } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { PortalSignOut } from "@/components/portal/portal-sign-out";
-import { pendingPaymentColumns, paymentHistoryColumns, utilityNoteColumns } from "@/components/portal/portal-columns";
+import { TenantClaimForm, TenantReportIssue } from "@/components/portal/tenant-actions";
+import { pendingPaymentColumns, paymentHistoryColumns, portalClaimColumns, portalTicketColumns, utilityNoteColumns } from "@/components/portal/portal-columns";
 import { ServerApiError, serverApiFetch } from "@/lib/server-api";
 import type { PortalMe } from "@/lib/dashboard-types";
 import { formatCfa, formatDate } from "@/lib/dashboard-utils";
@@ -34,7 +35,7 @@ export async function PortalOverview() {
 
   if (!data) return <UnlinkedState message={message} />;
 
-  const { tenant, building, apartment, lease, pendingPayments, paymentHistory, utilityNotes, stats } = data;
+  const { tenant, building, apartment, lease, pendingPayments, paymentHistory, utilityNotes, tickets, claims, stats } = data;
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-8 sm:px-6">
@@ -56,6 +57,29 @@ export async function PortalOverview() {
         <Card><CardHeader><CardDescription>Paiements payés</CardDescription><CardTitle>{stats.paidCount}</CardTitle></CardHeader></Card>
       </div>
 
+      {apartment && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Card className="border-primary/40">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><Wrench /> Signaler un problème</CardTitle>
+              <CardDescription>Réparation à faire ou dégradation constatée dans votre logement.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <TenantReportIssue apartmentId={apartment.id} />
+            </CardContent>
+          </Card>
+          <Card className="border-primary/40">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><ClipboardList /> Soumettre une réclamation</CardTitle>
+              <CardDescription>Dépôt de garantie, réparation à votre charge ou autre litige.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <TenantClaimForm apartmentId={apartment.id} />
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {pendingPayments.length > 0 && (
         <Card className="border-destructive/40">
           <CardHeader>
@@ -67,6 +91,36 @@ export async function PortalOverview() {
           </CardContent>
         </Card>
       )}
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><Wrench /> Mes demandes</CardTitle>
+            <CardDescription>Vos déclarations d’incidents et dégradations.</CardDescription>
+          </CardHeader>
+          <CardContent className="px-0">
+            {tickets.length ? (
+              <DataTable columns={portalTicketColumns} data={tickets} />
+            ) : (
+              <p className="px-6 pb-6 text-sm text-muted-foreground">Aucune demande pour le moment.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><ClipboardList /> Mes réclamations</CardTitle>
+            <CardDescription>Suivez vos réclamations soumises.</CardDescription>
+          </CardHeader>
+          <CardContent className="px-0">
+            {claims.length ? (
+              <DataTable columns={portalClaimColumns} data={claims} />
+            ) : (
+              <p className="px-6 pb-6 text-sm text-muted-foreground">Aucune réclamation pour le moment.</p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
@@ -87,6 +141,13 @@ export async function PortalOverview() {
                 <Badge variant={lease.status === "active" ? "default" : "outline"} className="w-fit">
                   {lease.status === "active" ? "Bail actif" : lease.status === "draft" ? "Brouillon" : lease.status === "expired" ? "Expiré" : "Terminé"}
                 </Badge>
+                {lease.contractUrl && (
+                  <div className="mt-1">
+                    <a href={lease.contractUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+                      <FileText className="size-4" /> Consulter mon contrat de bail
+                    </a>
+                  </div>
+                )}
               </>
             ) : (
               <p className="text-muted-foreground">Aucun bail rattaché à votre profil. Contactez votre gestionnaire.</p>
