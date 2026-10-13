@@ -185,10 +185,22 @@ export function mockAuthContext() {
         throw new HTTPException(403, { message: "Vous n’avez pas les droits nécessaires pour cette action." });
       }
     },
+    // Union surface: mock.module is process-global, so every mock of this
+    // module must provide every name any tested router imports.
     buildingAccessCondition: (..._args: any[]) => ({}),
     getBuildingForActor: async () => {
       throw new HTTPException(404, { message: "Building not found." });
     },
+    relatedUserScope: (..._args: any[]) => ({}),
+    agencyAccounts: (..._args: any[]) => ({ id: "account-1" }),
+    agencyBuildings: (..._args: any[]) => ({ id: "building-1" }),
+    financialTransactionScope: (..._args: any[]) => ({}),
+    prospectScope: (..._args: any[]) => ({}),
+    tenantScope: (..._args: any[]) => ({}),
+    requireTenantForActor: async () => {
+      throw new HTTPException(404, { message: "Tenant not found." });
+    },
+    assertSameBuilding: () => {},
   };
 }
 

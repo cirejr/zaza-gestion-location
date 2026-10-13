@@ -1,10 +1,9 @@
 import { PageHeader } from "@/components/dashboard/page-header";
-import { SubscriptionSettings, type SubscriptionRow } from "@/components/dashboard/subscription-settings";
 import { ManualBilling, type BillingInstruction, type BillingPlan, type PaymentRequest } from "@/components/billing/manual-billing";
 import { LeaveAgencyCard } from "@/components/dashboard/leave-agency-card";
 import { requireDashboardUser } from "@/lib/dashboard-guard";
 import { serverApiFetch } from "@/lib/server-api";
-import type { ApiList } from "@/lib/dashboard-types";
+import { Card, CardContent } from "@/components/ui/card";
 
 export const dynamic = "force-dynamic";
 
@@ -20,10 +19,14 @@ type SubscriptionPayload = {
   access: { allowed: boolean; access: string; inGrace: boolean } | null;
 };
 
-export default async function SubscriptionSettingsPage() {
+export default async function SubscriptionSettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ required?: string }>;
+}) {
   const user = await requireDashboardUser();
-  const [legacy, current, plans, instructions, requests] = await Promise.all([
-    serverApiFetch<ApiList<SubscriptionRow>>("/api/subscriptions"),
+  const { required } = await searchParams;
+  const [current, plans, instructions, requests] = await Promise.all([
     serverApiFetch<{ data: SubscriptionPayload }>("/api/billing/subscription"),
     serverApiFetch<{ data: BillingPlan[] }>("/api/billing/plans"),
     serverApiFetch<{ data: BillingInstruction[] }>("/api/billing/instructions"),
@@ -37,6 +40,15 @@ export default async function SubscriptionSettingsPage() {
         title="Abonnement"
         description="Paiement manuel (Wave, Orange Money, espèces) vérifié par l'administrateur."
       />
+      {required && (
+        <Card className="border-amber-500/50 bg-amber-500/10">
+          <CardContent className="py-4 text-sm">
+            <strong>Abonnement requis.</strong> Cette action nécessite un abonnement actif.
+            Choisissez une formule ci-dessous, payez via mobile money ou espèces, puis signalez
+            votre paiement — l’administrateur l’activera après vérification.
+          </CardContent>
+        </Card>
+      )}
       <ManualBilling
         subscription={current.data.subscription}
         plan={current.data.plan}
@@ -44,10 +56,6 @@ export default async function SubscriptionSettingsPage() {
         plans={plans.data}
         instructions={instructions.data}
         requests={requests.data}
-      />
-      <SubscriptionSettings
-        subscriptions={legacy.data}
-        defaults={{ name: user.name, email: user.email, phone: user.phone ?? "" }}
       />
       <LeaveAgencyCard
         organizationId={user.organization?.id ?? ""}

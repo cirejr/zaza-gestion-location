@@ -25,6 +25,12 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
     const message = isJson && body && typeof body === "object" && "message" in body && typeof body.message === "string"
       ? body.message
       : `API request failed (${response.status}).`;
+    // Gated premium write without an active subscription: greet the user
+    // with the subscription page instead of a bare error. The billing page
+    // itself never returns 402, so this cannot loop.
+    if (response.status === 402 && typeof window !== "undefined" && !window.location.pathname.startsWith("/settings/abonnement")) {
+      window.location.href = "/settings/abonnement?required=1";
+    }
     throw new ApiError(message, response.status, body);
   }
   return body as T;

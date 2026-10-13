@@ -168,6 +168,9 @@ export function ManualBilling({
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-2 text-sm">
+          {!subscription && (
+            <p className="font-medium">Votre agence n’a pas encore d’abonnement. Souscrivez ci-dessous pour activer la gestion (biens, baux, prospects).</p>
+          )}
           {subscription?.currentPeriodEnd && (
             <p>Payé jusqu’au <strong>{new Intl.DateTimeFormat("fr-FR", { dateStyle: "long" }).format(new Date(subscription.currentPeriodEnd))}</strong></p>
           )}

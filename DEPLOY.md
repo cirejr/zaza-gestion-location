@@ -48,8 +48,13 @@ Copier `.env.example` → `.env.local` puis remplir :
 - Planifier l'expiration côté serveur (jamais de minuteur frontend), une fois par jour :
   `POST /api/admin/billing/cron` avec l'en-tête `x-cron-secret: $CRON_SECRET`
   (Vercel Cron ou minuteur systemd). Sans `CRON_SECRET`, l'endpoint exige une session admin.
-- Point d'application : `POST /buildings` exige un abonnement actif/essai/grâce (402 sinon) ;
-  lectures, login et `/settings/abonnement` restent ouverts. Les données ne sont jamais supprimées.
+- Point d'application : la création (POST) sur biens, unités, baux, locataires et
+  prospects exige un abonnement actif ou en grâce (402 sinon, avec redirection
+  vers `/settings/abonnement?required=1`) ; lectures, login et facturation
+  restent ouverts. Les données ne sont jamais supprimées.
+- Pas d'essai gratuit : sans abonnement actif, la gestion est bloquée jusqu'au
+  paiement manuel vérifié. Relances T-7/T-1 avant expiration, grâce de 7 jours
+  après, puis blocage.
 
 > Les relances (WhatsApp) et liens de paiement appellent leur fournisseur uniquement quand les identifiants sont renseignés. Sans eux, les endpoints renvoient une réponse de type *preview* (`delivered: false`) ou une erreur JSON claire — pas de plantage. Le code OTP téléphone échoue proprement (« aucun canal de livraison configuré ») tant que `WHATSAPP_ACCESS_TOKEN` ou `TWILIO_*` manquent.
 

@@ -6,6 +6,7 @@ import { getDb } from "@/db";
 import { apartments, buildings, leases, prospectActivities, prospectReservations, prospects, prospectVisits, tenants, users } from "@/db/schema";
 import { leaseBlocks, rangesConflict, rangesOverlap } from "@/server/lib/availability";
 import { buildingAccessCondition, prospectScope, requireActor, requireRole } from "@/server/lib/auth-context";
+import { requireActiveSubscription } from "@/server/lib/subscription-access";
 import { countValue, pagination, parseBody, parseUuid } from "@/server/lib/http";
 import { phoneKey, phoneMatches } from "@/server/lib/tenant-auth";
 import type { ApiEnv } from "@/server/session-middleware";
@@ -365,6 +366,7 @@ router.get("/prospects/:id", async (c) => {
 router.post("/prospects", async (c) => {
   const actor = await requireActor(c);
   requireRole(actor, ["owner", "manager"]);
+  await requireActiveSubscription(actor);
   const data = await parseBody(c, prospectInput);
   if (!data.force) {
     const duplicates = await findDuplicates(prospectScope(actor), data.phone);

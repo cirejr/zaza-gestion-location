@@ -11,7 +11,7 @@ import {
   subscriptions,
 } from "@/db/schema";
 import { requireActor, requireRole } from "@/server/lib/auth-context";
-import { generatePaymentReference, priceForPlan, resolveAccess, trialEndsAt } from "@/server/lib/billing";
+import { generatePaymentReference, priceForPlan, resolveAccess } from "@/server/lib/billing";
 import { notifyAgency } from "@/server/lib/subscription-access";
 import { parseBody, parseUuid } from "@/server/lib/http";
 import type { ApiEnv } from "@/server/session-middleware";
@@ -72,30 +72,17 @@ router.get("/billing/subscription", async (c) => {
   requireRole(actor, ["owner", "manager"]);
   const db = getDb();
   let [sub] = await db.select().from(subscriptions).where(eq(subscriptions.agencyId, actor.organizationId)).limit(1);
-  // Lazy trial: a brand-new agency gets 14 days without any payment.
+  // No trial: an agency without a subscription has no access until it pays.
+  // The user starts a manual payment request below to activate.
   if (!sub) {
-    const now = new Date();
-    const [created] = await db
-      .insert(subscriptions)
-      .values({
-        agencyId: actor.organizationId,
-        plan: "monthly",
-        amount: "5000.00",
-        status: "trialing",
-        trialEndsAt: trialEndsAt(now),
-      })
-      .returning();
-    sub = created!;
-    if (sub) {
-      await db.insert(subscriptionEvents).values({
-        agencyId: actor.organizationId,
-        subscriptionId: sub.id,
-        kind: "created",
-        payload: { source: "trial", trialEndsAt: sub.trialEndsAt },
-      });
-    }
+    return c.json({
+      data: {
+        subscription: null,
+        plan: null,
+        access: { allowed: false, access: "expired", inGrace: false },
+      },
+    });
   }
-  if (!sub) throw new HTTPException(500, { message: "Impossible de charger l'abonnement." });
   const [plan] = sub.planId
     ? await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, sub.planId)).limit(1)
     : [];

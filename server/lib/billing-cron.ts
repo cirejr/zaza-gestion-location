@@ -11,31 +11,9 @@ import { notifyAgency } from "@/server/lib/subscription-access";
  */
 export async function runBillingCron(now = new Date()) {
   const db = getDb();
-  const summary = { expiredTrials: 0, markedPastDue: 0, expired: 0, reminders: 0 };
+  const summary = { markedPastDue: 0, expired: 0, reminders: 0 };
 
-  // 1. Trials that ended → expired.
-  const endedTrials = await db
-    .select()
-    .from(subscriptions)
-    .where(and(eq(subscriptions.status, "trialing"), lte(subscriptions.trialEndsAt, now)));
-  for (const sub of endedTrials) {
-    await db.update(subscriptions).set({ status: "expired", updatedAt: now }).where(eq(subscriptions.id, sub.id));
-    await db.insert(subscriptionEvents).values({
-      agencyId: sub.agencyId,
-      subscriptionId: sub.id,
-      kind: "expired",
-      payload: { source: "trial_end" },
-    });
-    await notifyAgency(db, sub.agencyId, {
-      type: "billing_trial_expired",
-      title: "Période d'essai terminée",
-      body: "Votre essai de 14 jours est terminé. Régularisez votre paiement pour continuer.",
-      href: "/settings/abonnement",
-    });
-    summary.expiredTrials += 1;
-  }
-
-  // 2. Active subscriptions past their period → past_due + grace window.
+  // 1. Active subscriptions past their period → past_due + grace window.
   const endedActive = await db
     .select()
     .from(subscriptions)
@@ -61,7 +39,7 @@ export async function runBillingCron(now = new Date()) {
     summary.markedPastDue += 1;
   }
 
-  // 3. past_due past grace → expired (data kept, access blocked).
+  // 2. past_due past grace → expired (data kept, access blocked).
   const pastGrace = await db
     .select()
     .from(subscriptions)
@@ -83,7 +61,7 @@ export async function runBillingCron(now = new Date()) {
     summary.expired += 1;
   }
 
-  // 4. Reminders at T-7 and T-1 for active subscriptions.
+  // 3. Reminders at T-7 and T-1 for active subscriptions.
   for (const days of EXPIRY_REMINDER_DAYS) {
     const from = new Date(now.getTime() + (days - 0.5) * 24 * 60 * 60 * 1000);
     const to = new Date(now.getTime() + (days + 0.5) * 24 * 60 * 60 * 1000);
@@ -112,40 +90,6 @@ export async function runBillingCron(now = new Date()) {
         type: "billing_expiring",
         title: `Abonnement expire dans ${days} jour${days > 1 ? "s" : ""}`,
         body: `Votre abonnement expire le ${end.toLocaleDateString("fr-FR")}. Renouvelez pour éviter toute interruption.`,
-        href: "/settings/abonnement",
-      });
-      summary.reminders += 1;
-    }
-  }
-
-  // 5. Trial reminders at T-3 and T-1 (same dedupe rule as above).
-  for (const days of [3, 1]) {
-    const from = new Date(now.getTime() + (days - 0.5) * 24 * 60 * 60 * 1000);
-    const to = new Date(now.getTime() + (days + 0.5) * 24 * 60 * 60 * 1000);
-    const trials = await db.select().from(subscriptions).where(eq(subscriptions.status, "trialing"));
-    for (const sub of trials) {
-      if (!sub.trialEndsAt) continue;
-      const end = new Date(sub.trialEndsAt);
-      if (end < from || end > to) continue;
-      const since = new Date(now.getTime() - 20 * 60 * 60 * 1000);
-      const recent = await db.select().from(subscriptionEvents).where(eq(subscriptionEvents.subscriptionId, sub.id));
-      const already = recent.some(
-        (e) =>
-          e.createdAt &&
-          new Date(e.createdAt) > since &&
-          (e.payload as { trialReminderDays?: number } | null)?.trialReminderDays === days,
-      );
-      if (already) continue;
-      await db.insert(subscriptionEvents).values({
-        agencyId: sub.agencyId,
-        subscriptionId: sub.id,
-        kind: "expired",
-        payload: { source: "trial_reminder", trialReminderDays: days },
-      });
-      await notifyAgency(db, sub.agencyId, {
-        type: "billing_trial_expiring",
-        title: `Essai gratuit : plus que ${days} jour${days > 1 ? "s" : ""}`,
-        body: `Votre essai se termine le ${end.toLocaleDateString("fr-FR")}. Régularisez votre paiement pour garder l'accès.`,
         href: "/settings/abonnement",
       });
       summary.reminders += 1;

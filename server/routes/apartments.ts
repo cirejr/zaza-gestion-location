@@ -5,6 +5,7 @@ import { z } from "zod";
 import { getDb } from "@/db";
 import { apartments, buildings, leases, utilitySplits } from "@/db/schema";
 import { getBuildingForActor, requireActor, requireRole } from "@/server/lib/auth-context";
+import { requireActiveSubscription } from "@/server/lib/subscription-access";
 import { pagination, parseBody, parseUuid, countValue } from "@/server/lib/http";
 import type { ApiEnv } from "@/server/session-middleware";
 
@@ -50,6 +51,7 @@ router.get("/buildings/:buildingId/apartments", async (c) => {
 router.post("/buildings/:buildingId/apartments", async (c) => {
   const actor = await requireActor(c);
   requireRole(actor, ["owner", "manager"]);
+  await requireActiveSubscription(actor);
   const buildingId = parseUuid(c.req.param("buildingId"), "building id");
   await getBuildingForActor(buildingId, actor);
   const data = await parseBody(c, apartmentInput);

@@ -34,12 +34,15 @@ beforeEach(() => {
 });
 
 describe("requireActiveSubscription", () => {
-  test("an agency with no row gets its trial lazily and is allowed", async () => {
-    const { sub, access } = await gate();
-    expect(access.allowed).toBe(true);
-    expect(access.access).toBe("trialing");
-    expect(sub.status).toBe("trialing");
-    expect(harness.recordedInserts.some((v: any) => v.agencyId === "org-1" && v.status === "trialing")).toBe(true);
+  test("an agency with no subscription is rejected with 402 (no trial)", async () => {
+    let status = 0;
+    try {
+      await gate();
+    } catch (error: any) {
+      status = error.status ?? 0;
+    }
+    expect(status).toBe(402);
+    expect(harness.recordedInserts).toHaveLength(0);
   });
 
   test("an active subscription within its period is allowed", async () => {

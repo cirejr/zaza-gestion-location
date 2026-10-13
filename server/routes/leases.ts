@@ -7,6 +7,7 @@ import { apartments, buildings, leases, tenants } from "@/db/schema";
 import { createLeaseContractPdf } from "@/lib/pdf";
 import { rangesConflict } from "@/server/lib/availability";
 import { buildingAccessCondition, getBuildingForActor, requireActor, requireRole } from "@/server/lib/auth-context";
+import { requireActiveSubscription } from "@/server/lib/subscription-access";
 import { loadAgencyBranding } from "@/server/lib/organization";
 import { pagination, parseBody, parseUuid, countValue } from "@/server/lib/http";
 import type { ApiEnv } from "@/server/session-middleware";
@@ -142,6 +143,7 @@ router.get("/leases/options", async (c) => {
 router.post("/leases", async (c) => {
   const actor = await requireActor(c);
   requireRole(actor, ["owner", "manager"]);
+  await requireActiveSubscription(actor);
   const data = await parseBody(c, leaseInput);
   const db = getDb();
   const [apartment] = await db.select().from(apartments).where(eq(apartments.id, data.apartmentId)).limit(1);
