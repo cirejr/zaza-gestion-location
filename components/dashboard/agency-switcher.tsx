@@ -18,6 +18,12 @@ import {
 type Agency = { id: string; name: string };
 
 /**
+ * Fetched once per browser session and reused across navigations: the agency
+ * list only changes when membership changes, which ends in a full reload.
+ */
+let agenciesCache: Agency[] | null = null;
+
+/**
  * Switch the active agency (Better Auth organization) from the header. A user
  * only sees this when they belong to more than one agency; otherwise the active
  * agency is surfaced as a static label so the header is never empty.
@@ -29,8 +35,15 @@ export function AgencySwitcher({ currentOrganizationId }: { currentOrganizationI
 
   useEffect(() => {
     let active = true;
+    if (agenciesCache) {
+      setAgencies(agenciesCache);
+      return;
+    }
     void authClient.organization.list().then(({ data }) => {
-      if (active && data) setAgencies(data.map((agency) => ({ id: agency.id, name: agency.name })));
+      if (active && data) {
+        agenciesCache = data.map((agency) => ({ id: agency.id, name: agency.name }));
+        setAgencies(agenciesCache);
+      }
     });
     return () => {
       active = false;

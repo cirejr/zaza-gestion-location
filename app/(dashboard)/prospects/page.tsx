@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/dashboard/page-header";
 import { CreateProspectDialog } from "@/components/dashboard/create-prospect-dialog";
 import { prospectColumns } from "./columns";
 import { serverApiFetch } from "@/lib/server-api";
-import { requireDashboardUser } from "@/lib/dashboard-guard";
+import { verifySession } from "@/lib/dal";
 import type { ApiList, ApiProspect } from "@/lib/dashboard-types";
 
 export const dynamic = "force-dynamic";
@@ -47,7 +47,7 @@ export default async function ProspectsPage({
   const budgetMax = params.budgetMax ?? "";
   const moveInDate = params.moveInDate ?? "";
   const limit = 20;
-  await requireDashboardUser();
+  await verifySession();
 
   return (
     <div className="flex flex-col gap-6">

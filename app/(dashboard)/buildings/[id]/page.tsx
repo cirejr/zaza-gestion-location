@@ -13,7 +13,7 @@ import { KpiGridSkeleton, ListControlsSkeleton, TableCardSkeleton } from "@/comp
 import { PageHeader } from "@/components/dashboard/page-header";
 import { apartmentColumns } from "./columns";
 import { cachedServerApiFetch, serverApiFetch } from "@/lib/server-api";
-import { requireDashboardUser } from "@/lib/dashboard-guard";
+import { verifySession } from "@/lib/dal";
 import type { ApiApartment, ApiBuilding, ApiList } from "@/lib/dashboard-types";
 import { formatCfa } from "@/lib/dashboard-utils";
 
@@ -24,7 +24,7 @@ export default async function BuildingDetailPage({ params, searchParams }: { par
   const q = queryParams.q ?? "";
   const page = Number(queryParams.page ?? "1") || 1;
   const limit = 20;
-  await requireDashboardUser();
+  await verifySession();
 
   return (
     <div className="flex flex-col gap-6">

@@ -7,7 +7,7 @@ import { KpiGridSkeleton, ListControlsSkeleton, TableCardSkeleton } from "@/comp
 import { PageHeader } from "@/components/dashboard/page-header";
 import { tenantColumns } from "./columns";
 import { serverApiFetch } from "@/lib/server-api";
-import { requireDashboardUser } from "@/lib/dashboard-guard";
+import { verifySession } from "@/lib/dal";
 import type { TenantOverviewResponse } from "@/lib/dashboard-types";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +24,7 @@ export default async function TenantsPage({ searchParams }: { searchParams: Prom
   const q = params.q ?? "";
   const page = Number(params.page ?? "1") || 1;
   const limit = 20;
-  await requireDashboardUser();
+  await verifySession();
 
   return (
     <div className="flex flex-col gap-6">

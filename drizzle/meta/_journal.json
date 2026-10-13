@@ -106,6 +106,20 @@
       "when": 1791810132759,
       "tag": "0014_noisy_roland_deschain",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1791833654215,
+      "tag": "0015_chief_living_mummy",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1791909750104,
+      "tag": "0016_dusty_risque",
+      "breakpoints": true
     }
   ]
 }

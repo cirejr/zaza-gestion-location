@@ -1,34 +1,18 @@
-import { redirect } from "next/navigation";
 import { cache } from "react";
-import { getServerSession } from "@/lib/session";
-import { isPortalEmail } from "@/lib/auth";
-import { serverApiFetch } from "@/lib/server-api";
+import { getViewer } from "@/lib/dal";
 import type { ApiUser } from "@/lib/dashboard-types";
 
 /**
- * Guards dashboard layouts and pages. Next.js renders the layout and the page
- * segment in parallel, so the layout's tenant redirect alone is not enough:
- * a page could fire owner/manager-only API calls before the redirect wins.
- * Call `await requireDashboardUser()` at the top of every dashboard page so
- * tenant-role and phone-only accounts are sent to their portal before any
- * protected endpoint is requested.
+ * Guards dashboard pages that render the viewer itself. The check is memoized
+ * with React `cache()` per server request, so the shell identity islands and
+ * the page share a single session check + `/api/users/me` call instead of
+ * each resolving the actor independently.
  *
- * The guard is memoized with React `cache()` per server request, so the layout
- * and its page share a single session check + `/api/users/me` call instead of
- * each resolving the actor independently on every render.
+ * Pages that only need "a signed-in staff member" should prefer
+ * `verifySession()` from `@/lib/dal` — the full actor resolution here is only
+ * worth it when the page renders user data. Authorization of the underlying
+ * reads and writes always happens inside the API routes.
  */
 export const requireDashboardUser = cache(async (): Promise<ApiUser> => {
-  const session = await getServerSession();
-  if (!session) redirect("/login?redirect=/");
-  // Portal identities (phone + OTP, synthetic `@portal.naya.app` email) and
-  // accounts with no email at all belong in the tenant portal, never here.
-  if (!session.user.email || isPortalEmail(session.user.email)) redirect("/espace-locataire");
-  const response = await serverApiFetch<{ data: ApiUser }>("/api/users/me");
-  const user = response.data;
-  // Tenant-role accounts use the tenant portal instead of the management dashboard.
-  if (user.role === "tenant") redirect("/espace-locataire");
-  // The agency owner must finish the first-run wizard before reaching the
-  // dashboard; managers and invited users are not gated.
-  if (user.needsOnboarding) redirect("/onboarding");
-  return user;
+  return getViewer();
 });

@@ -14,7 +14,7 @@ import { BuildingGridSkeleton, ListControlsSkeleton, TableCardSkeleton } from "@
 import { PageHeader } from "@/components/dashboard/page-header";
 import { unitOverviewColumns } from "./columns";
 import { serverApiFetch } from "@/lib/server-api";
-import { requireDashboardUser } from "@/lib/dashboard-guard";
+import { verifySession } from "@/lib/dal";
 import type { ApiBuildingOverview, ApiList } from "@/lib/dashboard-types";
 import { formatCfa } from "@/lib/dashboard-utils";
 
@@ -25,7 +25,7 @@ export default async function BuildingsPage({ searchParams }: { searchParams: Pr
   const q = params.q ?? "";
   const page = Number(params.page ?? "1") || 1;
   const limit = Number(params.limit ?? "12") || 12;
-  await requireDashboardUser();
+  await verifySession();
 
   return (
     <div className="flex flex-col gap-6">

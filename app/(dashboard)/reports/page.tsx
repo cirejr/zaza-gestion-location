@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/dashboard/page-header";
-import { requireDashboardUser } from "@/lib/dashboard-guard";
+import { verifySession } from "@/lib/dal";
 import { serverApiFetch } from "@/lib/server-api";
 import type { ApiReport } from "@/lib/dashboard-types";
 import { formatCfa } from "@/lib/dashboard-utils";
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 export default async function ReportsPage() {
   const period = new Date().toISOString().slice(0, 7);
-  await requireDashboardUser();
+  await verifySession();
 
   return (
     <div className="flex flex-col gap-6">

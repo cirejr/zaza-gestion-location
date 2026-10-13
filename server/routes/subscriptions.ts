@@ -3,26 +3,19 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { getDb } from "@/db";
-import { subscriptions, users, payments, buildings } from "@/db/schema";
-import { createPaymentLink, PaymentProviderError, type PaymentProviderName } from "@/lib/payment-providers";
-import { buildingAccessCondition, getBuildingForActor, requireActor, requireRole } from "@/server/lib/auth-context";
-import { parseBody, parseUuid } from "@/server/lib/http";
+import { subscriptions, users, payments, buildings, subscriptionPayments } from "@/db/schema";
+import { createCheckoutSession, getCheckoutStatus, verifyPayment, verifySaspayWebhook, cancelCheckoutSession } from "@/lib/saspay";
+import { subscriptionPlans } from "@/lib/plans";
+import { z as zz } from "zod";
 import type { ApiEnv } from "@/server/session-middleware";
+import { requireActor, requireRole } from "@/server/lib/auth-context";
+import { parseBody, parseUuid } from "@/server/lib/http";
 
 const router = new Hono<ApiEnv>;
 
-/**
- * Input for creating a new subscription.
- * The agency administrator selects a plan (monthly/annual) and the system
- * generates a PayDunya checkout link.
- */
-const subscriptionInput = z.object({
-  plan: z.enum(["monthly", "annual"]),
-  amount: z.number().positive(),
-  customerName: z.string().trim().min(2).max(160),
-  customerEmail: z.string().email().max(255).optional(),
-  customerPhone: z.string().trim().min(6).max(32),
-  reference: z.string().trim().min(1).max(180),
+/** Input for creating a new subscription. */
+const subscriptionInput = zz.object({
+  plan: zz.enum(["monthly", "annual"]),
 });
 
 /**
@@ -54,7 +47,8 @@ router.get("/", async (c) => {
 /**
  * POST /api/subscriptions
  * Create a new subscription payment intent.
- * This generates a PayDunya checkout link and stores a pending subscription record.
+ * This generates a SasPay checkout session and stores a pending subscription record.
+ * Montants fixes côté serveur : 5 000 XOF (mensuel) / 50 000 XOF (annuel).
  */
 router.post("/", async (c) => {
   const actor = await requireActor(c);
@@ -73,40 +67,42 @@ router.post("/", async (c) => {
     .where(and(eq(subscriptions.agencyId, agencyId), eq(subscriptions.status, "active")))) as any;
   if (countResult.total > 0) throw new HTTPException(409, { message: "Cette agence possède déjà un abonnement actif." });
 
-  // Create a subscription record (pending)
+  // Détermine les montants selon le plan
+  const { amount, currency } = subscriptionPlans[body.plan as keyof typeof subscriptionPlans];
+
+  // Création d'un abonnement status=pending avec les IDs SasPay
   const [subscription] = (await db
     .insert(subscriptions)
     .values({
       agencyId,
       plan: body.plan,
-      amount: body.amount.toString(),
+      amount,
       status: "pending",
-      paydunyaReference: `${body.plan}-${agencyId}-${Date.now()}`,
-      checkoutUrl: null,
+      saspay_checkout_id: null,
+      saspay_payment_id: null,
+      net_amount: null,
     })
     .returning()) as unknown as [typeof subscriptions.$inferSelect];
 
-  // Generate PayDunya checkout link
-  const reference = `SUB-${agencyId}-${subscription.id}`;
-  const link = await createPaymentLink("paydunya", {
-    amount: body.amount,
-    currency: "XOF",
-    reference,
-    customerName: body.customerName,
-    customerEmail: body.customerEmail,
-    customerPhone: body.customerPhone,
-    returnUrl: `${process.env.APP_URL ?? "http://localhost:3000"}/subscriptions/${subscription.id}/confirm`,
-    notificationUrl: `${process.env.APP_URL ?? "http://localhost:3000"}/api/webhooks/payments/paydunya`,
-    subscription: {
-      plan: body.plan,
+  // Création nouvelle session checkout SasPay
+  const customerEmail = actor.email ?? "unknown@agency.local";
+  const customerName = actor.name ?? "Agency";
+
+  const session = await createCheckoutSession(c, amount, currency, customerEmail, customerName, {
+    description: `Abonnement ${body.plan} - Naya`,
+    returnUrl: `${process.env.APP_URL}/subscription/return?subscription=${subscription.id}`,
+    metadata: {
       subscriptionId: subscription.id,
-    },
+      agencyId,
+      plan: body.plan,
+      expected_amount: amount
+    }
   });
 
-  // Update subscription with checkout URL
+  // Mise à jour avec les IDs SasPay et l'URL de checkout
   await db
     .update(subscriptions)
-    .set({ checkoutUrl: link.paymentUrl })
+    .set({ saspay_checkout_id: session.id, checkoutUrl: session.checkout_url })
     .where(eq(subscriptions.id, subscription.id));
 
   return c.json({
@@ -115,7 +111,7 @@ router.post("/", async (c) => {
       plan: subscription.plan,
       amount: subscription.amount,
       status: subscription.status,
-      checkoutUrl: subscription.checkoutUrl,
+      checkoutUrl: session.checkout_url
     },
   });
 });
@@ -147,6 +143,142 @@ router.get("/:id", async (c) => {
       ...subscription,
       activated: subscription.status === "active",
     },
+  });
+});
+
+/**
+ * GET /api/subscriptions/:id/status
+ * Get subscription status from SasPay gateway (polling endpoint).
+ * Revérifie toujours côté gateway, jamais confiance dans un statut mémorisé.
+ */
+router.get("/:id/status", async (c) => {
+  const actor = await requireActor(c);
+  requireRole(actor, ["owner", "manager"]);
+  const db = getDb();
+
+  const [subscription] = await db
+    .select()
+    .from(subscriptions)
+    .where(and(eq(subscriptions.id, c.req.param("id")), eq(subscriptions.agencyId, actor.organizationId)))
+    .limit(1)
+    .execute();
+
+  if (!subscription) return c.notFound();
+
+  // Si déjà actif, on renvoie le statut courant
+  if (subscription.status === "active") {
+    return c.json({
+      id: subscription.id,
+      status: "active",
+      currentPeriodEnd: subscription.currentPeriodEnd,
+      plan: subscription.plan
+    });
+  }
+
+  // Sinon, on réclame le statut gateway via la session checkout
+  if (subscription.saspay_checkout_id) {
+    const status = await getCheckoutStatus(c, subscription.saspay_checkout_id);
+
+    // Si PAID → vérifie le paiement complet (seule source de vérité)
+    if (status.status === "PAID") {
+      const payment = await verifyPayment(c, subscription.saspay_payment_id!);
+
+      // Activation uniquement si SUCCESS + montants/concordes
+      if (payment?.status === "SUCCESS") {
+        const expectedAmount = subscription.plan === "annual" ? "50000.00" : "5000.00";
+        if (payment.requested_amount === expectedAmount && payment.currency === "XOF") {
+          const now = new Date();
+          const currentPeriodEnd = subscription.currentPeriodEnd
+            ? new Date(Math.max(now.getTime(), new Date(subscription.currentPeriodEnd).getTime()))
+            : now;
+          const durationMap: Record<string, number> = { monthly: 30 * 24 * 60 * 60 * 1000, annual: 365 * 24 * 60 * 60 * 1000 };
+          const newPeriodEnd = new Date(now.getTime() + (durationMap[subscription.plan as keyof typeof durationMap] || 30 * 24 * 60 * 60 * 1000));
+
+          await db
+            .update(subscriptions)
+            .set({ status: "active", currentPeriodEnd: newPeriodEnd, net_amount: payment.net_amount })
+            .where(eq(subscriptions.id, subscription.id));
+
+          return c.json({
+            id: subscription.id,
+            status: "active",
+            currentPeriodEnd: newPeriodEnd,
+            plan: subscription.plan,
+            net_amount: payment.net_amount
+          });
+        }
+      }
+
+      // Si vérification échoue → laisse pending (pas d'activation)
+      return c.json({ id: subscription.id, status: "pending" });
+    }
+
+    // Si PENDING → laisse pending (pas d'activation)
+    if (status.status === "PENDING") {
+      return c.json({ id: subscription.id, status: "pending" });
+    }
+
+    // Si EXPIRED/CANCELLED → laisse le statut tel quel
+    return c.json({ id: subscription.id, status: status.status });
+  }
+
+  return c.json({ id: subscription.id, status: subscription.status });
+});
+
+/**
+ * POST /api/subscriptions/:id/renew
+ * Crée une nouvelle session de checkout pour le même plan.
+ * Au SUCCESS → étend currentPeriodEnd (jamais de prélèvement auto).
+ */
+router.post("/:id/renew", async (c) => {
+  const actor = await requireActor(c);
+  requireRole(actor, ["owner", "manager"]);
+  const db = getDb();
+
+  const [subscription] = await db
+    .select()
+    .from(subscriptions)
+    .where(and(eq(subscriptions.id, c.req.param("id")), eq(subscriptions.agencyId, actor.organizationId)))
+    .limit(1)
+    .execute();
+
+  if (!subscription) return c.notFound();
+  if (subscription.status === "active") {
+    return c.json({ error: "Abonnement déjà actif" }, 400);
+  }
+
+  const plan = subscription.plan as keyof typeof subscriptionPlans;
+  const { amount, currency } = subscriptionPlans[plan];
+
+  // Session existante : best-effort cancel avant recreation
+  if (subscription.saspay_checkout_id) {
+    try { await cancelCheckoutSession(c, subscription.saspay_checkout_id); } catch (_) {}
+  }
+
+  const customerEmail = actor.email ?? "unknown@agency.local";
+  const customerName = actor.name ?? "Agency";
+
+  const session = await createCheckoutSession(c, amount, currency, customerEmail, customerName, {
+    description: `Renouvellement abonnement ${plan} - Naya`,
+    returnUrl: `${process.env.APP_URL}/subscription/return?subscription=${c.req.param("id")}`,
+    metadata: {
+      subscriptionId: c.req.param("id"),
+      agencyId: actor.organizationId,
+      plan,
+      expected_amount: amount,
+      renew: "true"
+    }
+  });
+
+  await db
+    .update(subscriptions)
+    .set({ saspay_checkout_id: session.id, checkoutUrl: session.checkout_url })
+    .where(eq(subscriptions.id, subscription.id));
+
+  return c.json({
+    subscriptionId: subscription.id,
+    status: "pending",
+    checkoutUrl: session.checkout_url
   });
 });
 

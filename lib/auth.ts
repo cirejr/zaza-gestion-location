@@ -1,7 +1,7 @@
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { organization, phoneNumber } from "better-auth/plugins";
+import { admin, organization, phoneNumber } from "better-auth/plugins";
 import { getDb } from "@/db";
 import {
   authAccounts,
@@ -180,6 +180,14 @@ export function createAuth() {
       // `sendInvitationEmail` so the route can report delivery status back to
       // the UI and fall back to a copyable link when email is not configured.
       organization(),
+      // Platform owner (SaaS) administration: role/banned fields on `user`,
+      // impersonation support on `session`. Distinct from agency owner/manager
+      // roles, which stay in the domain `users` table + org membership.
+      admin({
+        defaultRole: "user",
+        adminRoles: ["admin"],
+        bannedUserMessage: "Ce compte a été suspendu. Contactez le support.",
+      }),
     ],
   });
 }

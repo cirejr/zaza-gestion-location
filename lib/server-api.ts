@@ -24,17 +24,15 @@ export async function serverApiFetch<T>(path: string, init: RequestInit = {}): P
 
   const baseUrl = process.env.APP_URL ?? process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
   const response = await api.fetch(new Request(new URL(path, baseUrl), { ...init, headers }));
-  const isJson = response.headers.get("content-type")?.includes("application/json");
-  const body = isJson ? await response.json() : await response.text();
+  const json = await response.json();
   if (!response.ok) {
-    const message = isJson && body && typeof body === "object" && "message" in body && typeof body.message === "string" ? body.message : `API request failed (${response.status}).`;
-    throw new ServerApiError(message, response.status, body);
+    const message = json.message && typeof json.message === "string" ? json.message : `API request failed (${response.status})`;
+    throw new ServerApiError(message, response.status, json);
   }
-  return body as T;
+  return json as T;
 }
 
-/**
- * Same call, memoized per request with React `cache()`, so two `<Suspense>`
+/** Same call, memoized per request with React `cache()`, so two `<Suspense>`
  * sections on the same page that need the same URL share one in-process call
  * instead of running the query twice. Keyed by URL (string) — do not pass
  * objects as `init` here or dedupe is lost.

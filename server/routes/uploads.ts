@@ -6,7 +6,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { getDb } from "@/db";
-import { buildings, claims, financialTransactions, maintenanceTickets } from "@/db/schema";
+import { buildings, claims, financialTransactions, maintenanceTickets, subscriptionPaymentRequests } from "@/db/schema";
 import { isStaffSession } from "@/lib/auth";
 import { requireActor, requireRole } from "@/server/lib/auth-context";
 import { objectStorageClient, UPLOAD_BUCKET } from "@/server/lib/object-storage";
@@ -23,7 +23,7 @@ const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
  * 40-character string interpolated straight into the object key, so a caller
  * could aim a write at another namespace. The list makes the key space closed.
  */
-const ALLOWED_DIRECTORIES = new Set(["buildings", "identity-docs", "leases", "tickets", "invoices", "files", "claims", "receipts", "agency"]);
+const ALLOWED_DIRECTORIES = new Set(["buildings", "identity-docs", "leases", "tickets", "invoices", "files", "claims", "receipts", "agency", "billing"]);
 /** Folders a tenant-portal identity may upload to. */
 const PORTAL_DIRECTORIES = new Set(["tickets", "claims", "files"]);
 
@@ -135,7 +135,14 @@ async function staffCanReadReferencedFile(key: string, organizationId: string): 
     .innerJoin(buildings, eq(financialTransactions.buildingId, buildings.id))
     .where(and(access, like(financialTransactions.attachmentUrl, suffix)))
     .limit(1);
-  return Boolean(transaction);
+  if (transaction) return true;
+  // Manual-billing receipts on the actor's agency payment requests.
+  const [billing] = await db
+    .select({ id: subscriptionPaymentRequests.id })
+    .from(subscriptionPaymentRequests)
+    .where(and(eq(subscriptionPaymentRequests.agencyId, organizationId), like(subscriptionPaymentRequests.receiptUrl, suffix)))
+    .limit(1);
+  return Boolean(billing);
 }
 
 /**

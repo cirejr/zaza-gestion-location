@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/dashboard/page-header";
 import { SubscriptionSettings, type SubscriptionRow } from "@/components/dashboard/subscription-settings";
+import { ManualBilling, type BillingInstruction, type BillingPlan, type PaymentRequest } from "@/components/billing/manual-billing";
 import { LeaveAgencyCard } from "@/components/dashboard/leave-agency-card";
 import { requireDashboardUser } from "@/lib/dashboard-guard";
 import { serverApiFetch } from "@/lib/server-api";
@@ -7,19 +8,42 @@ import type { ApiList } from "@/lib/dashboard-types";
 
 export const dynamic = "force-dynamic";
 
+type SubscriptionPayload = {
+  subscription: {
+    status: string;
+    currentPeriodEnd: string | null;
+    trialEndsAt: string | null;
+    plan: string;
+  } | null;
+  access: { allowed: boolean; access: string; inGrace: boolean } | null;
+};
+
 export default async function SubscriptionSettingsPage() {
   const user = await requireDashboardUser();
-  const response = await serverApiFetch<ApiList<SubscriptionRow>>("/api/subscriptions");
+  const [legacy, current, plans, instructions, requests] = await Promise.all([
+    serverApiFetch<ApiList<SubscriptionRow>>("/api/subscriptions"),
+    serverApiFetch<{ data: SubscriptionPayload }>("/api/billing/subscription"),
+    serverApiFetch<{ data: BillingPlan[] }>("/api/billing/plans"),
+    serverApiFetch<{ data: BillingInstruction[] }>("/api/billing/instructions"),
+    serverApiFetch<{ data: PaymentRequest[] }>("/api/billing/requests"),
+  ]);
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         eyebrow="Agence"
         title="Abonnement"
-        description="Votre formule, l’historique des paiements et votre accès à l’agence."
+        description="Paiement manuel (Wave, Orange Money, espèces) vérifié par l'administrateur."
+      />
+      <ManualBilling
+        subscription={current.data.subscription}
+        access={current.data.access}
+        plans={plans.data}
+        instructions={instructions.data}
+        requests={requests.data}
       />
       <SubscriptionSettings
-        subscriptions={response.data}
+        subscriptions={legacy.data}
         defaults={{ name: user.name, email: user.email, phone: user.phone ?? "" }}
       />
       <LeaveAgencyCard

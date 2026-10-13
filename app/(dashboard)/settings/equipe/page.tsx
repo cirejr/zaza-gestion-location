@@ -8,14 +8,14 @@ import { InviteMemberDialog } from "@/components/dashboard/invite-member-dialog"
 import { PageHeader } from "@/components/dashboard/page-header";
 import { teamColumns } from "../../team/columns";
 import { invitationColumns } from "../../team/invitation-columns";
-import { requireDashboardUser } from "@/lib/dashboard-guard";
+import { verifySession } from "@/lib/dal";
 import { ServerApiError, serverApiFetch } from "@/lib/server-api";
 import type { ApiInvitation, ApiList, ApiUser } from "@/lib/dashboard-types";
 
 export const dynamic = "force-dynamic";
 
 export default async function TeamSettingsPage() {
-  await requireDashboardUser();
+  await verifySession();
 
   return (
     <div className="flex flex-col gap-6">

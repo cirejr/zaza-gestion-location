@@ -19,6 +19,8 @@ import ticketsRoutes from "@/server/routes/tickets";
 import claimsRoutes from "@/server/routes/claims";
 import prospectsRoutes from "@/server/routes/prospects";
 import subscriptionsRoutes from "@/server/routes/subscriptions";
+import billingRoutes from "@/server/routes/billing";
+import adminBillingRoutes from "@/server/routes/admin-billing";
 import uploadsRoutes from "@/server/routes/uploads";
 import utilitiesRoutes from "@/server/routes/utilities";
 import usersRoutes from "@/server/routes/users";
@@ -37,7 +39,7 @@ app.all("/auth/*", (c) => auth.handler(c.req.raw));
 
 app.get("/me", sessionMiddleware, (c) => c.json({ session: c.get("session") }));
 
-for (const path of ["/buildings", "/apartments", "/tenants", "/leases", "/payments", "/utilities", "/tickets", "/claims", "/prospects", "/accounts", "/reports", "/notifications", "/users", "/uploads", "/portal", "/subscriptions", "/organization"]) {
+for (const path of ["/buildings", "/apartments", "/tenants", "/leases", "/payments", "/utilities", "/tickets", "/claims", "/prospects", "/accounts", "/reports", "/notifications", "/users", "/uploads", "/portal", "/subscriptions", "/organization", "/billing", "/admin"]) {
   app.use(path, sessionMiddleware, requireSession);
   app.use(`${path}/*`, sessionMiddleware, requireSession);
 }
@@ -55,6 +57,8 @@ app.post("/utilities/split-preview", async (c) => {
 });
 
 app.route("/subscriptions", subscriptionsRoutes);
+app.route("/", billingRoutes);
+app.route("/", adminBillingRoutes);
 app.route("/", buildingsRoutes);
 app.route("/", apartmentsRoutes);
 app.route("/", tenantsRoutes);

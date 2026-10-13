@@ -7,7 +7,7 @@ import { ButtonSkeleton, KpiGridSkeleton, ListControlsSkeleton, TableCardSkeleto
 import { PageHeader } from "@/components/dashboard/page-header";
 import { paymentColumns } from "./columns";
 import { serverApiFetch } from "@/lib/server-api";
-import { requireDashboardUser } from "@/lib/dashboard-guard";
+import { verifySession } from "@/lib/dal";
 import type { ApiFinancialAccountWithBalance, ApiList, LeaseRow, PaymentRow, PaymentSummary } from "@/lib/dashboard-types";
 import { formatCfa } from "@/lib/dashboard-utils";
 
@@ -19,7 +19,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const page = Number(params.page ?? "1") || 1;
   const limit = 20;
   const status = params.status ?? "";
-  await requireDashboardUser();
+  await verifySession();
 
   return (
     <div className="flex flex-col gap-6">

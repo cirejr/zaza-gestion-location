@@ -30,8 +30,12 @@ export const chargeableTo = pgEnum("chargeable_to", ["owner", "agency"]);
 export const managementFeeBasis = pgEnum("management_fee_basis", ["percent_collected", "percent_due", "fixed", "percent_collected_plus_fixed"]);
 export const ownerStatementStatus = pgEnum("owner_statement_status", ["draft", "finalized"]);
 export const ownerStatementLineType = pgEnum("owner_statement_line_type", ["rent_billed", "rent_collected", "other_income", "expense_owner", "expense_agency", "management_fee", "adjustment", "net"]);
-export const subscriptionStatus = pgEnum("subscription_status", ["pending", "active", "cancelled", "expired"]);
+export const subscriptionStatus = pgEnum("subscription_status", ["pending", "active", "cancelled", "expired", "trialing", "pending_payment", "past_due", "suspended"]);
 export const subscriptionPlan = pgEnum("subscription_plan", ["monthly", "annual"]);
+export const billingInterval = pgEnum("billing_interval", ["monthly", "annual"]);
+export const paymentRequestStatus = pgEnum("payment_request_status", ["pending", "notified", "confirmed", "rejected", "cancelled"]);
+export const manualPayMethod = pgEnum("manual_pay_method", ["wave", "orange_money", "mtn_momo", "mobile_money", "cash"]);
+export const subscriptionEventKind = pgEnum("subscription_event_kind", ["created", "notified", "confirmed", "rejected", "activated", "extended", "suspended", "reactivated", "plan_changed", "adjustment", "expired", "cancelled"]);
 export const utilityType = pgEnum("utility_type", ["water", "electricity", "security", "other"]);
 export const splitStatus = pgEnum("split_status", ["pending", "split", "notified"]);
 export const ticketStatus = pgEnum("ticket_status", ["pending", "in_progress", "resolved"]);
@@ -117,6 +121,13 @@ export const authUsers = pgTable("user", {
   image: text("image"),
   phoneNumber: text("phone_number"),
   phoneNumberVerified: boolean("phone_number_verified").notNull().default(false),
+  // Better Auth admin plugin (platform owner, not agency role). `role` is
+  // "user" by default, "admin" for the SaaS owner dashboard. Kept on the
+  // auth-owned table exactly as the plugin expects.
+  role: text("role").notNull().default("user"),
+  banned: boolean("banned").notNull().default(false),
+  banReason: text("ban_reason"),
+  banExpires: timestamp("ban_expires", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -130,6 +141,8 @@ export const authSessions = pgTable("session", {
   ipAddress: text("ip_address"),
   userAgent: text("user_agent"),
   userId: text("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
+  // Better Auth admin plugin: who impersonated this session, if anyone.
+  impersonatedBy: text("impersonated_by"),
   // Set by the Better Auth organization plugin's `setActive`. Kept as plain
   // text (no FK), exactly as Better Auth generates it, so an organization can
   // be removed without invalidating live sessions.
@@ -758,22 +771,152 @@ export const subscriptions = pgTable("subscriptions", {
   agencyId: text("agency_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   plan: subscriptionPlan("plan").notNull(),
   amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+  net_amount: numeric("net_amount", { precision: 14, scale: 2 }), // montant qui revient au marchand après frais
   status: subscriptionStatus("status").notNull().default("pending"),
+  saspay_checkout_id: varchar("saspay_checkout_id", { length: 180 }), // ID de la session checkout_sessions
+  saspay_payment_id: varchar("saspay_payment_id", { length: 180 }).unique(), // ID de la transaction verify (unique par abonnement)
   paydunyaInvoiceId: varchar("paydunya_invoice_id", { length: 180 }),
   paydunyaReference: varchar("paydunya_reference", { length: 180 }),
   checkoutUrl: text("checkout_url"),
+  metadata: jsonb("metadata"), // { subscription_id, agency_id, plan, expected_amount, ... }
   currentPeriodStart: timestamp("current_period_start", { withTimezone: true }),
   currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+  // Manual-billing lifecycle (SasPay columns above are kept untouched for a
+  // future gateway). All manual amounts are integers in XOF on the request
+  // tables; these columns only carry dates/reasons.
+  trialEndsAt: timestamp("trial_ends_at", { withTimezone: true }),
+  suspendedAt: timestamp("suspended_at", { withTimezone: true }),
+  suspendReason: text("suspend_reason"),
+  graceUntil: timestamp("grace_until", { withTimezone: true }),
   cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({
   agencyIdx: index("subscriptions_agency_idx").on(table.agencyId),
   statusIdx: index("subscriptions_status_idx").on(table.status),
+  saspay_payment_idIdx: uniqueIndex("subscriptions_saspay_payment_id_uq").on(table.saspay_payment_id),
 }));
 
 export const subscriptionsRelations = relations(subscriptions, ({ one }) => ({
   agency: one(organizations, { fields: [subscriptions.agencyId], references: [organizations.id] }),
+}));
+
+export const subscriptionPayments = pgTable("subscription_payments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  subscription_id: uuid("subscription_id")
+    .notNull()
+    .references(() => subscriptions.id, { onDelete: "cascade" })
+    .unique(),
+  saspay_payment_id: varchar("saspay_payment_id", { length: 180 }).notNull().unique(),
+  amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+  net_amount: numeric("net_amount", { precision: 14, scale: 2 }), // ce qui revient au marchand
+  currency: varchar("currency", { length: 3 }).notNull().default("XOF"),
+  status: varchar("status", { length: 20 }).notNull().default("pending"), // PENDING, SUCCESS, FAILED
+  paid_at: timestamp("paid_at", { withTimezone: true }),
+  raw_event: jsonb("raw_event"), // corps du webhook stocké pour auditing
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  subscriptionIdx: index("subscription_payments_subscription_id_idx").on(table.subscription_id),
+}));
+
+export const subscriptionPaymentsRelations = relations(subscriptionPayments, ({ one }) => ({
+  subscription: one(subscriptions, { fields: [subscriptionPayments.subscription_id], references: [subscriptions.id] }),
+}));
+
+/**
+ * Configurable SaaS plans. Prices are integers in XOF (no floats). The
+ * `code` stays stable ("monthly"/"annual" seed rows match the legacy
+ * `subscriptionPlan` enum) so the API can price server-side from the DB
+ * instead of trusting client amounts or hardcoded constants.
+ */
+export const subscriptionPlans = pgTable("subscription_plans", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  code: varchar("code", { length: 40 }).notNull().unique(),
+  name: varchar("name", { length: 120 }).notNull(),
+  description: text("description"),
+  monthlyPriceXof: integer("monthly_price_xof").notNull(),
+  annualPriceXof: integer("annual_price_xof").notNull(),
+  features: jsonb("features").$type<string[]>().notNull().default([]),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * Manual payment instructions shown to agencies (Wave, Orange Money, cash…).
+ * Admin-managed; agencies only read active rows. No secrets here.
+ */
+export const subscriptionPaymentInstructions = pgTable("subscription_payment_instructions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  method: manualPayMethod("method").notNull(),
+  displayName: varchar("display_name", { length: 160 }),
+  phoneNumber: varchar("phone_number", { length: 32 }),
+  instructions: text("instructions"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * A manual payment request: the agency declares intent, pays outside the app,
+ * optionally notifies, and a platform admin confirms or rejects. A row can
+ * only be applied once (`appliedAt` + status guard in the confirm
+ * transaction). Never auto-activates a subscription.
+ */
+export const subscriptionPaymentRequests = pgTable("subscription_payment_requests", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  agencyId: text("agency_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  subscriptionId: uuid("subscription_id").references(() => subscriptions.id, { onDelete: "set null" }),
+  planId: uuid("plan_id").references(() => subscriptionPlans.id, { onDelete: "set null" }),
+  billingInterval: billingInterval("billing_interval").notNull(),
+  expectedAmountXof: integer("expected_amount_xof").notNull(),
+  currency: varchar("currency", { length: 3 }).notNull().default("XOF"),
+  reference: varchar("reference", { length: 40 }).notNull().unique(),
+  method: manualPayMethod("method").notNull().default("wave"),
+  status: paymentRequestStatus("status").notNull().default("pending"),
+  // Agency-supplied notification (unverified claim, never proof of payment).
+  claimedRef: varchar("claimed_ref", { length: 180 }),
+  claimedPaidAt: timestamp("claimed_paid_at", { withTimezone: true }),
+  note: text("note"),
+  receiptUrl: text("receipt_url"),
+  // Admin verification (independent check, explicit decision).
+  actualAmountXof: integer("actual_amount_xof"),
+  actualPaidAt: timestamp("actual_paid_at", { withTimezone: true }),
+  transactionRef: varchar("transaction_ref", { length: 180 }),
+  adminNote: text("admin_note"),
+  rejectReason: text("reject_reason"),
+  amountOverride: boolean("amount_override").notNull().default(false),
+  decidedBy: text("decided_by").references(() => authUsers.id, { onDelete: "set null" }),
+  decidedAt: timestamp("decided_at", { withTimezone: true }),
+  appliedAt: timestamp("applied_at", { withTimezone: true }),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  agencyIdx: index("payment_requests_agency_idx").on(table.agencyId),
+  statusIdx: index("payment_requests_status_idx").on(table.status),
+  referenceIdx: uniqueIndex("payment_requests_reference_uq").on(table.reference),
+  subscriptionIdx: index("payment_requests_subscription_idx").on(table.subscriptionId),
+}));
+
+/**
+ * Immutable audit trail for every billing decision. Append-only: the API
+ * never updates or deletes rows here.
+ */
+export const subscriptionEvents = pgTable("subscription_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  agencyId: text("agency_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  subscriptionId: uuid("subscription_id").references(() => subscriptions.id, { onDelete: "set null" }),
+  requestId: uuid("request_id").references(() => subscriptionPaymentRequests.id, { onDelete: "set null" }),
+  kind: subscriptionEventKind("kind").notNull(),
+  actorId: text("actor_id").references(() => authUsers.id, { onDelete: "set null" }),
+  payload: jsonb("payload").$type<Record<string, unknown>>(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  agencyIdx: index("subscription_events_agency_idx").on(table.agencyId),
+  subscriptionIdx: index("subscription_events_subscription_idx").on(table.subscriptionId),
+  requestIdx: index("subscription_events_request_idx").on(table.requestId),
 }));
 
 export const utilitySplitsRelations = relations(utilitySplits, ({ one }) => ({

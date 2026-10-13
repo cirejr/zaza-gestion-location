@@ -7,7 +7,7 @@ import { ButtonSkeleton, ListControlsSkeleton, TableCardSkeleton } from "@/compo
 import { PageHeader } from "@/components/dashboard/page-header";
 import { utilityColumns } from "./columns";
 import { serverApiFetch } from "@/lib/server-api";
-import { requireDashboardUser } from "@/lib/dashboard-guard";
+import { verifySession } from "@/lib/dal";
 import type { ApiBuilding, ApiList, UtilitiesOverviewResponse } from "@/lib/dashboard-types";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +17,7 @@ export default async function UtilitiesPage({ searchParams }: { searchParams: Pr
   const q = params.q ?? "";
   const page = Number(params.page ?? "1") || 1;
   const limit = 25;
-  await requireDashboardUser();
+  await verifySession();
 
   return (
     <div className="flex flex-col gap-6">

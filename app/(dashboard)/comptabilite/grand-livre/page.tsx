@@ -1,6 +1,6 @@
 import { PageHeader } from "@/components/dashboard/page-header";
 import { LedgerWorkspace } from "@/components/dashboard/accounting/ledger-workspace";
-import { requireDashboardUser } from "@/lib/dashboard-guard";
+import { verifySession } from "@/lib/dal";
 import { serverApiFetch } from "@/lib/server-api";
 import type { ApiFinancialAccountWithBalance, ApiList } from "@/lib/dashboard-types";
 
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 type BuildingOption = { id: string; name: string };
 
 export default async function LedgerPage() {
-  await requireDashboardUser();
+  await verifySession();
   const [accounts, buildings] = await Promise.all([
     serverApiFetch<{ data: ApiFinancialAccountWithBalance[] }>("/api/accounts"),
     serverApiFetch<ApiList<BuildingOption>>("/api/buildings?limit=100"),

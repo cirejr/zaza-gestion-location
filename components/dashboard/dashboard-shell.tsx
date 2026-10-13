@@ -27,24 +27,11 @@ import {
   UsersRound,
   type LucideIcon,
 } from "lucide-react";
-import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
-import type { ApiUser } from "@/lib/dashboard-types";
-import { AgencySwitcher } from "@/components/dashboard/agency-switcher";
+import { signOutToLogin } from "@/components/dashboard/shell-identity-client";
 import { CommandPalette, type CommandItem } from "@/components/dashboard/command-palette";
 import { NotificationBell } from "@/components/dashboard/notification-bell";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import {
   Sidebar,
@@ -111,21 +98,22 @@ function isActivePath(pathname: string, href: string) {
   return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
 }
 
-function initials(name: string) {
-  return name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
-}
-
-export function DashboardShell({ user, children }: { user: ApiUser; children: React.ReactNode }) {
+export function DashboardShell({
+  sidebarIdentity,
+  headerLeading,
+  headerMenu,
+  children,
+}: {
+  sidebarIdentity: React.ReactNode;
+  headerLeading: React.ReactNode;
+  headerMenu: React.ReactNode;
+  children: React.ReactNode;
+}) {
   const pathname = usePathname();
   const current =
     navGroups.flatMap((group) => group.items).find((item) => isActivePath(pathname, item.href)) ??
     (pathname.startsWith("/settings") ? { label: "Paramètres", href: "/settings", icon: Settings } : undefined);
   const [commandOpen, setCommandOpen] = useState(false);
-
-  async function signOut() {
-    await authClient.signOut();
-    window.location.href = "/login";
-  }
 
   // ⌘K on macOS, Ctrl+K elsewhere.
   useEffect(() => {
@@ -144,7 +132,7 @@ export function DashboardShell({ user, children }: { user: ApiUser; children: Re
       group.items.map((item) => ({ id: item.href, label: item.label, group: group.label, icon: item.icon, href: item.href })),
     ),
     { id: "/settings", label: "Paramètres", group: "Compte", icon: Settings, href: "/settings" },
-    { id: "sign-out", label: "Se déconnecter", group: "Compte", icon: LogOut, onSelect: () => void signOut() },
+    { id: "sign-out", label: "Se déconnecter", group: "Compte", icon: LogOut, onSelect: () => void signOutToLogin() },
   ];
 
   return (
@@ -186,11 +174,7 @@ export function DashboardShell({ user, children }: { user: ApiUser; children: Re
           ))}
         </SidebarContent>
         <SidebarFooter className="border-t border-sidebar-border">
-          <div className="flex items-center gap-3 rounded-xl bg-sidebar-accent/50 p-3 group-data-[collapsible=icon]:hidden">
-            <Avatar className="size-8"><AvatarFallback>{initials(user.name)}</AvatarFallback></Avatar>
-            <div className="min-w-0 flex-1"><p className="truncate text-xs font-bold">{user.name}</p><p className="truncate text-[10px] text-sidebar-foreground/60">{user.email}</p></div>
-            <Button variant="ghost" size="icon-sm" onClick={() => void signOut()} aria-label="Se déconnecter"><LogOut /></Button>
-          </div>
+          {sidebarIdentity}
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton render={<Link href="/settings" />} isActive={pathname === "/settings"} tooltip="Paramètres"><Settings /><span>Paramètres</span></SidebarMenuButton>
@@ -206,24 +190,11 @@ export function DashboardShell({ user, children }: { user: ApiUser; children: Re
             <div><p className="text-[10px] font-semibold text-muted-foreground">Naya / {current?.label ?? "Pilotage"}</p><h1 className="text-lg font-bold tracking-tight">{current?.label ?? "Vue d’ensemble"}</h1></div>
           </div>
           <div className="flex items-center gap-2">
-            <AgencySwitcher currentOrganizationId={user.organization?.id} />
+            {headerLeading}
             <Button variant="outline" size="icon" aria-label="Rechercher" title="Rechercher (⌘K)" onClick={() => setCommandOpen(true)}><span className="text-xs">⌘K</span></Button>
             <NotificationBell />
             <Separator orientation="vertical" className="mx-1 hidden h-6 sm:block" />
-            <DropdownMenu>
-              <DropdownMenuTrigger render={<Button variant="ghost" className="gap-2 px-2" />}>
-                <Avatar className="size-8"><AvatarFallback>{initials(user.name)}</AvatarFallback></Avatar>
-                <span className="hidden text-left sm:block"><span className="block max-w-28 truncate text-xs font-semibold">{user.name}</span><span className="block text-[10px] text-muted-foreground">{user.role === "owner" ? "Propriétaire" : user.role === "manager" ? "Gérant" : "Locataire"}</span></span>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuGroup>
-                  <DropdownMenuLabel>{user.email}</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem render={<Link href="/reports" />}><Activity />Rapports</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => void signOut()}><LogOut />Se déconnecter</DropdownMenuItem>
-                </DropdownMenuGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {headerMenu}
           </div>
         </header>
         <div className="flex-1 p-4 sm:p-6 lg:p-8">{children}</div>

@@ -6,7 +6,7 @@ import { ListControlsSkeleton, TableCardSkeleton } from "@/components/dashboard/
 import { PageHeader } from "@/components/dashboard/page-header";
 import { claimColumns } from "./columns";
 import { serverApiFetch } from "@/lib/server-api";
-import { requireDashboardUser } from "@/lib/dashboard-guard";
+import { verifySession } from "@/lib/dal";
 import type { ApiList, ClaimRow } from "@/lib/dashboard-types";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +18,7 @@ export default async function ClaimsPage({ searchParams }: { searchParams: Promi
   const status = params.status ?? "";
   const type = params.type ?? "";
   const limit = 20;
-  await requireDashboardUser();
+  await verifySession();
 
   return (
     <div className="flex flex-col gap-6">

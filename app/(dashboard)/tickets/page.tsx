@@ -7,7 +7,7 @@ import { ButtonSkeleton, KpiGridSkeleton, ListControlsSkeleton, TableCardSkeleto
 import { PageHeader } from "@/components/dashboard/page-header";
 import { ticketColumns } from "./columns";
 import { serverApiFetch } from "@/lib/server-api";
-import { requireDashboardUser } from "@/lib/dashboard-guard";
+import { verifySession } from "@/lib/dal";
 import type { ApiBuilding, ApiList, TicketRow, TicketSummary } from "@/lib/dashboard-types";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +19,7 @@ export default async function TicketsPage({ searchParams }: { searchParams: Prom
   const status = params.status ?? "";
   const priority = params.priority ?? "";
   const limit = 20;
-  await requireDashboardUser();
+  await verifySession();
 
   return (
     <div className="flex flex-col gap-6">

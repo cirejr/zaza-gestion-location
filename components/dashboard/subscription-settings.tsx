@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { CreditCard, ExternalLink, Sparkles } from "lucide-react";
 import { toast } from "sonner";
-import { ApiError, apiFetch } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,18 +29,20 @@ const planOptions = [
 
 const planLabels: Record<string, string> = { monthly: "Mensuel", annual: "Annuel" };
 
-function formatAmount(value: string) {
-  return `${Number(value).toLocaleString("fr-FR")} FCFA`;
-}
+/** Montants fixes côté serveur (XOF) */
+const planAmounts = {
+  monthly: "5000.00",
+  annual: "50000.00",
+};
 
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium" }).format(new Date(value));
+/** Récupère le montant affiché pour un plan donné */
+function getPlanAmount(plan: string) {
+  return planAmounts[plan as keyof typeof planAmounts] ?? "0.00";
 }
 
 /**
- * Agency subscription: the plan history and a checkout flow. A subscription
- * belongs to the agency, not to the person, so every owner/manager sees the
- * same list.
+ * Agency subscription: the plan history and a checkout flow.
+ * A subscription belongs to the agency, not to the person, so every owner/manager sees the same list.
  */
 export function SubscriptionSettings({
   subscriptions,
@@ -51,7 +53,6 @@ export function SubscriptionSettings({
 }) {
   const [open, setOpen] = useState(false);
   const [plan, setPlan] = useState("monthly");
-  const [amount, setAmount] = useState("");
   const [customerName, setCustomerName] = useState(defaults.name);
   const [customerEmail, setCustomerEmail] = useState(defaults.email);
   const [customerPhone, setCustomerPhone] = useState(defaults.phone);
@@ -59,16 +60,11 @@ export function SubscriptionSettings({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const parsed = Number(amount.replace(/\s/g, "").replace(",", "."));
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      toast.error("Indiquez un montant valide.");
-      return;
-    }
     setSubmitting(true);
     try {
       const response = await apiFetch<{ data: { checkoutUrl?: string | null } }>("/api/subscriptions", {
         method: "POST",
-        body: JSON.stringify({ plan, amount: Math.round(parsed), customerName, customerEmail, customerPhone }),
+        body: JSON.stringify({ plan }),
       });
       const url = response.data.checkoutUrl;
       if (url) {
@@ -78,7 +74,7 @@ export function SubscriptionSettings({
       toast.success("Abonnement créé. En attente de paiement.");
       setOpen(false);
     } catch (error) {
-      toast.error(error instanceof ApiError ? error.message : "Impossible de créer l’abonnement.");
+      toast.error(error instanceof Error ? error.message : "Impossible de créer l’abonnement.");
     } finally {
       setSubmitting(false);
     }
@@ -113,11 +109,7 @@ export function SubscriptionSettings({
                   <Select
                     value={plan}
                     items={planOptions}
-                    onValueChange={(value) => {
-                      const next = String(value);
-                      setPlan(next);
-                      setAmount(next === "annual" ? "120000" : "12000");
-                    }}
+                    onValueChange={(value) => setPlan(String(value))}
                   >
                     <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -127,7 +119,18 @@ export function SubscriptionSettings({
                 </Field>
                 <Field>
                   <FieldLabel htmlFor="sub-amount">Montant (FCFA)</FieldLabel>
-                  <Input id="sub-amount" inputMode="numeric" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="12000" />
+                  {/* Montant affiché mais non modifiable - fixé côté serveur */}
+                  <Input
+                    id="sub-amount"
+                    inputMode="numeric"
+                    value={getPlanAmount(plan)}
+                    onChange={(event) => { /* montant figé, ignore les modifications */ }}
+                    placeholder={getPlanAmount(plan)}
+                    readOnly
+                  />
+                  <p className="text-xs text-muted-foreground ml-2">
+                    {plan === "monthly" ? "5 000 XOF / mois" : "50 000 XOF / an"}
+                  </p>
                 </Field>
                 <Field>
                   <FieldLabel htmlFor="sub-name">Nom</FieldLabel>
@@ -165,8 +168,8 @@ export function SubscriptionSettings({
                 <div className="flex items-center gap-3">
                   <span className="flex size-9 items-center justify-center rounded-xl bg-secondary text-secondary-foreground"><CreditCard className="size-4" /></span>
                   <div>
-                    <p className="text-sm font-semibold">{planLabels[subscription.plan] ?? subscription.plan} — {formatAmount(subscription.amount)}</p>
-                    <p className="text-xs text-muted-foreground">Créé le {formatDate(subscription.createdAt)}</p>
+                    <p className="text-sm font-semibold">{planLabels[subscription.plan] ?? subscription.plan} — {subscription.amount} XOF</p>
+                    <p className="text-xs text-muted-foreground">Créé le {new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium" }).format(new Date(subscription.createdAt))}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
