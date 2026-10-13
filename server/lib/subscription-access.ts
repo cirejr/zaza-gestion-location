@@ -1,7 +1,8 @@
 import { and, eq, inArray } from "drizzle-orm";
+import { HTTPException } from "hono/http-exception";
 import { getDb } from "@/db";
-import { notifications, subscriptions, users } from "@/db/schema";
-import { resolveAccess } from "@/server/lib/billing";
+import { notifications, subscriptionEvents, subscriptions, users } from "@/db/schema";
+import { resolveAccess, trialEndsAt } from "@/server/lib/billing";
 import type { AgencyActor } from "@/server/lib/auth-context";
 
 /** Notify every owner/manager of an agency in-app (existing inbox table). */
@@ -35,13 +36,36 @@ export async function getAgencySubscription(agencyId: string) {
 /**
  * Reusable subscription gate for premium writes. Reads are left open so an
  * expired agency always keeps login, billing and account access.
+ *
+ * Agencies created before billing (no row yet) get their 14-day trial
+ * lazily here — the same rule as GET /billing/subscription — so enforcement
+ * never locks out an agency that never had a chance to subscribe.
  */
 export async function requireActiveSubscription(actor: AgencyActor, now = new Date()) {
-  const sub = await getAgencySubscription(actor.organizationId);
+  const db = getDb();
+  let sub = await getAgencySubscription(actor.organizationId);
   if (!sub) {
-    const { HTTPException } = await import("hono/http-exception");
-    throw new HTTPException(402, { message: "Abonnement requis. Régularisez votre paiement." });
+    const [created] = await db
+      .insert(subscriptions)
+      .values({
+        agencyId: actor.organizationId,
+        plan: "monthly",
+        amount: "5000.00",
+        status: "trialing",
+        trialEndsAt: trialEndsAt(now),
+      })
+      .returning();
+    if (created) {
+      await db.insert(subscriptionEvents).values({
+        agencyId: actor.organizationId,
+        subscriptionId: created.id,
+        kind: "created",
+        payload: { source: "trial", trialEndsAt: created.trialEndsAt },
+      });
+    }
+    sub = created ?? null;
   }
+  if (!sub) throw new HTTPException(402, { message: "Abonnement requis. Régularisez votre paiement." });
   const access = resolveAccess(
     {
       status: sub.status,
@@ -52,7 +76,6 @@ export async function requireActiveSubscription(actor: AgencyActor, now = new Da
     now,
   );
   if (!access.allowed) {
-    const { HTTPException } = await import("hono/http-exception");
     throw new HTTPException(402, { message: "Abonnement expiré. Régularisez votre paiement pour continuer." });
   }
   return { sub, access };

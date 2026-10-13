@@ -70,12 +70,14 @@ async function uploadReceipt(file: File): Promise<string> {
 
 export function ManualBilling({
   subscription,
+  plan,
   access,
   plans,
   instructions,
   requests,
 }: {
-  subscription: { status: string; currentPeriodEnd: string | null; trialEndsAt: string | null; plan: string } | null;
+  subscription: { status: string; currentPeriodEnd: string | null; trialEndsAt: string | null; plan: string; cancelAtPeriodEnd: boolean } | null;
+  plan: { name: string; monthlyPriceXof: number; annualPriceXof: number } | null;
   access: { allowed: boolean; access: string; inGrace: boolean } | null;
   plans: BillingPlan[];
   instructions: BillingInstruction[];
@@ -154,7 +156,14 @@ export function ManualBilling({
         <CardHeader>
           <CardDescription>Abonnement actuel</CardDescription>
           <CardTitle className="flex flex-wrap items-center gap-2">
-            {subscription ? <StatusBadge status={subscription.status} /> : "Aucun abonnement"}
+            {subscription ? (
+              <>
+                {plan?.name ?? (subscription.plan === "annual" ? "Annuel" : "Mensuel")}
+                <StatusBadge status={subscription.status} />
+              </>
+            ) : (
+              "Aucun abonnement"
+            )}
             {access && <span className="text-sm font-normal text-muted-foreground">Accès : {access.access}{access.inGrace ? " (grâce)" : ""}</span>}
           </CardTitle>
         </CardHeader>
@@ -168,6 +177,7 @@ export function ManualBilling({
           {access && !access.allowed && (
             <p className="text-destructive">Accès restreint — régularisez votre paiement. Vos données sont conservées.</p>
           )}
+          <CancelToggle initialCancelled={Boolean((subscription as { cancelAtPeriodEnd?: boolean } | null)?.cancelAtPeriodEnd)} />
           <p className="text-muted-foreground">Le paiement se fait hors application (Wave, Orange Money, espèces). L’activation intervient uniquement après vérification par l’administrateur.</p>
         </CardContent>
       </Card>
@@ -324,8 +334,38 @@ export function ManualBilling({
   );
 }
 
-function InstructionsList({ instructions, method }: { instructions: BillingInstruction[]; method: string }) {
-  const relevant = instructions.filter((i) => i.method === method);
+function CancelToggle({ initialCancelled }: { initialCancelled: boolean }) {
+  const [working, setWorking] = useState(false);
+  const [cancelled, setCancelled] = useState(initialCancelled);
+
+  async function toggle(cancel: boolean) {
+    setWorking(true);
+    try {
+      await apiFetch("/api/billing/subscription/cancel", {
+        method: "POST",
+        body: JSON.stringify({ cancel }),
+      });
+      setCancelled(cancel);
+      toast.success(cancel ? "Résiliation programmée en fin de période." : "Résiliation annulée.");
+      window.location.reload();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Action impossible.");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 pt-1">
+      <Button variant="outline" size="sm" disabled={working} onClick={() => void toggle(!cancelled)}>
+        {cancelled ? "Reprendre l'abonnement" : "Résilier en fin de période"}
+      </Button>
+      <span className="text-xs text-muted-foreground">Votre accès reste actif jusqu’à la fin payée. Réservé au propriétaire.</span>
+    </div>
+  );
+}
+
+function InstructionsList({ instructions, method }: { instructions: BillingInstruction[]; method: string }) {  const relevant = instructions.filter((i) => i.method === method);
   const list = relevant.length ? relevant : instructions.slice(0, 3);
   if (!list.length) return null;
   return (

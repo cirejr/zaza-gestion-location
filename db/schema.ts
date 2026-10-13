@@ -770,6 +770,7 @@ export const subscriptions = pgTable("subscriptions", {
   id: uuid("id").defaultRandom().primaryKey(),
   agencyId: text("agency_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   plan: subscriptionPlan("plan").notNull(),
+  planId: uuid("plan_id").references(() => subscriptionPlans.id, { onDelete: "set null" }),
   amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
   net_amount: numeric("net_amount", { precision: 14, scale: 2 }), // montant qui revient au marchand après frais
   status: subscriptionStatus("status").notNull().default("pending"),

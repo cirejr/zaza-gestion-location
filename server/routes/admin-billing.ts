@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
@@ -162,18 +162,33 @@ router.post("/admin/billing/requests/:id/confirm", async (c) => {
   if (Number.isNaN(actualPaidAt.getTime())) throw new HTTPException(400, { message: "Date de paiement invalide." });
 
   const result = await db.transaction(async (tx) => {
-    const [request] = await tx
-      .select()
-      .from(subscriptionPaymentRequests)
-      .where(eq(subscriptionPaymentRequests.id, id))
-      .limit(1);
-    if (!request) throw new HTTPException(404, { message: "Demande introuvable." });
-    if (request.status === "confirmed" || request.appliedAt) {
-      throw new HTTPException(409, { message: "Cette demande a déjà été confirmée." });
-    }
-    if (request.status === "rejected" || request.status === "cancelled") {
+    // Atomic claim: only a pending/notified, never-applied request can be
+    // taken. Concurrent confirms race on this single statement — exactly one
+    // wins, the others see zero rows and get 404/409 below.
+    const [claimed] = await tx
+      .update(subscriptionPaymentRequests)
+      .set({ status: "notified", updatedAt: new Date() })
+      .where(
+        and(
+          eq(subscriptionPaymentRequests.id, id),
+          inArray(subscriptionPaymentRequests.status, ["pending", "notified"]),
+          isNull(subscriptionPaymentRequests.appliedAt),
+        ),
+      )
+      .returning();
+    if (!claimed) {
+      const [existing] = await tx
+        .select()
+        .from(subscriptionPaymentRequests)
+        .where(eq(subscriptionPaymentRequests.id, id))
+        .limit(1);
+      if (!existing) throw new HTTPException(404, { message: "Demande introuvable." });
+      if (existing.status === "confirmed" || existing.appliedAt) {
+        throw new HTTPException(409, { message: "Cette demande a déjà été confirmée." });
+      }
       throw new HTTPException(409, { message: "Cette demande ne peut plus être confirmée." });
     }
+    const request = claimed;
 
     const discrepancy = body.actualAmountXof !== request.expectedAmountXof;
     if (discrepancy && !body.override) {
@@ -201,6 +216,7 @@ router.post("/admin/billing/requests/:id/confirm", async (c) => {
       .set({
         status: "active",
         plan: request.billingInterval,
+        planId: request.planId,
         amount: String(request.expectedAmountXof),
         currentPeriodStart: start,
         currentPeriodEnd: end,
@@ -312,8 +328,36 @@ router.get("/admin/billing/subscriptions", async (c) => {
   return c.json({ data: rows });
 });
 
-router.post("/admin/billing/subscriptions/:id/suspend", async (c) => {
-  const admin = await requirePlatformAdmin(c);
+/** Subscription detail: current state, immutable history, payment records. */
+router.get("/admin/billing/subscriptions/:id", async (c) => {
+  await requirePlatformAdmin(c);
+  const id = parseUuid(c.req.param("id"), "subscription id");
+  const db = getDb();
+  const [sub] = await db.select().from(subscriptions).where(eq(subscriptions.id, id)).limit(1);
+  if (!sub) throw new HTTPException(404, { message: "Abonnement introuvable." });
+  const [agency] = await db
+    .select({ id: organizations.id, name: organizations.name, profile: organizationProfiles })
+    .from(organizations)
+    .leftJoin(organizationProfiles, eq(organizationProfiles.organizationId, organizations.id))
+    .where(eq(organizations.id, sub.agencyId))
+    .limit(1);
+  const [plan] = sub.planId
+    ? await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, sub.planId)).limit(1)
+    : [];
+  const history = await db
+    .select()
+    .from(subscriptionEvents)
+    .where(eq(subscriptionEvents.subscriptionId, id))
+    .orderBy(desc(subscriptionEvents.createdAt));
+  const paymentRecords = await db
+    .select()
+    .from(subscriptionPaymentRequests)
+    .where(eq(subscriptionPaymentRequests.subscriptionId, id))
+    .orderBy(desc(subscriptionPaymentRequests.createdAt));
+  return c.json({ data: { subscription: sub, agency, plan: plan ?? null, history, paymentRecords } });
+});
+
+router.post("/admin/billing/subscriptions/:id/suspend", async (c) => {  const admin = await requirePlatformAdmin(c);
   const id = parseUuid(c.req.param("id"), "subscription id");
   const body = await parseBody(c, suspendInput);
   const db = getDb();

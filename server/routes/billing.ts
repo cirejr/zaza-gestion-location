@@ -96,6 +96,9 @@ router.get("/billing/subscription", async (c) => {
     }
   }
   if (!sub) throw new HTTPException(500, { message: "Impossible de charger l'abonnement." });
+  const [plan] = sub.planId
+    ? await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, sub.planId)).limit(1)
+    : [];
   const access = resolveAccess(
     {
       status: sub.status,
@@ -105,7 +108,7 @@ router.get("/billing/subscription", async (c) => {
     },
     new Date(),
   );
-  return c.json({ data: { subscription: sub, access } });
+  return c.json({ data: { subscription: sub, plan: plan ?? null, access } });
 });
 
 /**
@@ -132,11 +135,19 @@ router.post("/billing/requests", async (c) => {
       .values({
         agencyId: actor.organizationId,
         plan: body.billingInterval,
+        planId: plan.id,
         amount: String(expected),
         status: "pending_payment",
       })
       .returning();
     sub = created!;
+  } else if (!sub.planId) {
+    const [updated] = await db
+      .update(subscriptions)
+      .set({ planId: plan.id, updatedAt: new Date() })
+      .where(eq(subscriptions.id, sub.id))
+      .returning();
+    if (updated) sub = updated;
   }
 
   // One reference attempt loop (unique constraint is the final guard).
@@ -264,8 +275,7 @@ router.post("/billing/requests/:id/notify", async (c) => {
   return c.json({ data: updated });
 });
 
-router.post("/billing/requests/:id/cancel", async (c) => {
-  const actor = await requireActor(c);
+router.post("/billing/requests/:id/cancel", async (c) => {  const actor = await requireActor(c);
   requireRole(actor, ["owner", "manager"]);
   const id = parseUuid(c.req.param("id"), "request id");
   const db = getDb();
@@ -289,6 +299,41 @@ router.post("/billing/requests/:id/cancel", async (c) => {
     requestId: id,
     kind: "cancelled",
     payload: { reference: row.reference },
+  });
+  return c.json({ data: updated });
+});
+
+/**
+ * Schedule (or lift) cancellation at the end of the paid period. Access is
+ * kept until `currentPeriodEnd`; nothing is deleted.
+ */
+router.post("/billing/subscription/cancel", async (c) => {
+  const actor = await requireActor(c);
+  requireRole(actor, ["owner"]);
+  const body = await parseBody(c, z.object({ cancel: z.boolean().default(true) }));
+  const db = getDb();
+  const [sub] = await db.select().from(subscriptions).where(eq(subscriptions.agencyId, actor.organizationId)).limit(1);
+  if (!sub) throw new HTTPException(404, { message: "Aucun abonnement pour cette agence." });
+  const cancel = body.cancel ?? true;
+  const end = sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd) : null;
+  // "cancelled" here means "scheduled not to renew": a future paid-through
+  // date keeps access (see resolveAccess). Un-cancelling restores the status
+  // the period implies.
+  const nextStatus = cancel
+    ? "cancelled"
+    : end && end.getTime() > Date.now()
+      ? "active"
+      : "past_due";
+  const [updated] = await db
+    .update(subscriptions)
+    .set({ cancelAtPeriodEnd: cancel, status: nextStatus as never, updatedAt: new Date() })
+    .where(eq(subscriptions.id, sub.id))
+    .returning();
+  await db.insert(subscriptionEvents).values({
+    agencyId: actor.organizationId,
+    subscriptionId: sub.id,
+    kind: "cancelled",
+    payload: { cancel },
   });
   return c.json({ data: updated });
 });

@@ -34,6 +34,22 @@ Copier `.env.example` → `.env.local` puis remplir :
 | `PAYDUNYA_*` / `FEDAPAY_*` | Passerelles alternatives | ⚠️ Optionnel |
 | `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM_NUMBER` | SMS de repli (optionnel) | ⚠️ Optionnel |
 | `API_PORT` | Port du serveur Bun optionnel (`server/index.ts`) | 8787 |
+| `CRON_SECRET` | Secret partagé pour `POST /api/admin/billing/cron` (expirations + relances). Vide en dev local (repli sur session admin) ; **requis en prod** | ⚠️ À remplir |
+
+## 2b. Facturation manuelle (abonnements SaaS)
+
+- Migrer : `bun run db:migrate` (tables `subscription_plans`, `subscription_payment_requests`,
+  `subscription_payment_instructions`, `subscription_events` + colonnes `plan_id`, `trial_ends_at`,
+  `suspended_at`, `suspend_reason`, `grace_until` ; plugin admin Better Auth : `user.role/banned/ban_reason/ban_expires`, `session.impersonated_by`).
+- Promouvoir le propriétaire SaaS : `bun scripts/promote-admin.ts vous@domaine.com`
+  (l'utilisateur doit s'être connecté une fois avant). Révocation : même commande avec `--revoke`.
+- Renseigner les numéros destinataires dans `/admin/facturation` (onglet Formules & instructions) —
+  les seeds laissent `phone_number` vide.
+- Planifier l'expiration côté serveur (jamais de minuteur frontend), une fois par jour :
+  `POST /api/admin/billing/cron` avec l'en-tête `x-cron-secret: $CRON_SECRET`
+  (Vercel Cron ou minuteur systemd). Sans `CRON_SECRET`, l'endpoint exige une session admin.
+- Point d'application : `POST /buildings` exige un abonnement actif/essai/grâce (402 sinon) ;
+  lectures, login et `/settings/abonnement` restent ouverts. Les données ne sont jamais supprimées.
 
 > Les relances (WhatsApp) et liens de paiement appellent leur fournisseur uniquement quand les identifiants sont renseignés. Sans eux, les endpoints renvoient une réponse de type *preview* (`delivered: false`) ou une erreur JSON claire — pas de plantage. Le code OTP téléphone échoue proprement (« aucun canal de livraison configuré ») tant que `WHATSAPP_ACCESS_TOKEN` ou `TWILIO_*` manquent.
 

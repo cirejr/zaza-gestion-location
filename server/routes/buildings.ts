@@ -5,6 +5,7 @@ import { z } from "zod";
 import { getDb } from "@/db";
 import { apartments, buildings } from "@/db/schema";
 import { buildingAccessCondition, getBuildingForActor, requireActor, requireRole } from "@/server/lib/auth-context";
+import { requireActiveSubscription } from "@/server/lib/subscription-access";
 import { pagination, parseBody, parseUuid, countValue, type RequestContext } from "@/server/lib/http";
 import type { ApiEnv } from "@/server/session-middleware";
 
@@ -43,6 +44,10 @@ router.get("/buildings", async (c) => {
 router.post("/buildings", async (c) => {
   const actor = await requireActor(c);
   requireRole(actor, ["owner"]);
+  // SaaS enforcement point: creating a property requires an active (or
+  // trial/grace) subscription. Reads stay open so an expired agency keeps
+  // login, billing and account access; data is never deleted.
+  await requireActiveSubscription(actor);
   const data = await parseBody(c, buildingInput);
   const db = getDb();
   const [building] = await db.insert(buildings).values({

@@ -24,6 +24,7 @@ export default async function AdminBillingPage() {
       method: string;
       status: string;
       claimedRef: string | null;
+      claimedPaidAt: string | null;
       receiptUrl: string | null;
       note: string | null;
       actualAmountXof: number | null;

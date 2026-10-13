@@ -1,83 +1,52 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
-import { HTTPException } from "hono/http-exception";
+import { harness, mockAuthContext, mockDb, resetHarness } from "@/server/test-utils/mock-harness";
 
 /**
  * Route tests for `PATCH /organization` with the database and auth layers
- * mocked. The repo has no DB/HTTP test harness, so the four modules the route
- * touches are stubbed here:
- *
- * - `@/db` (getDb): a fake query builder. `select()` resolves to the
- *   configurable `slugSelectResult` (the slug-clash pre-check); `update()`
- *   records the profile payload into `updates` / `lastProfileUpdate`.
- * - `@/server/lib/auth-context`: `requireActor` returns the configurable
- *   `currentActor`; `requireRole` enforces the real owner-only rule.
- * - `@/server/lib/organization`: no-op profile ensure; `getOrganizationDetail`
- *   echoes the last profile write so tests can observe persistence.
- * - `@/lib/auth`: records Better Auth `updateOrganization` calls.
+ * mocked. The `@/db` and auth-context mocks are shared process-globally from
+ * `server/test-utils/mock-harness` (see its header for why); the
+ * organization-plugin and `@/lib/auth` stubs stay local because no other
+ * test file touches those modules.
  *
  * The router itself, zod validation (`parseBody`) and the HTTP layer (Hono)
  * are real, so status codes and body validation are exercised end to end.
  */
 
-let currentActor: any = null;
-let slugSelectResult: Array<{ id: string }> = [];
-let updates: Array<Record<string, unknown>> = [];
-let lastProfileUpdate: Record<string, any> = {};
 let authCalls: Array<unknown> = [];
 
-mock.module("@/db", () => ({
-  getDb: () => ({
-    select: () => ({
-      from: () => ({
-        where: () => ({
-          limit: async () => slugSelectResult,
-        }),
-      }),
-    }),
-    update: () => ({
-      set: (values: Record<string, unknown>) => ({
-        where: async () => {
-          updates.push(values);
-          lastProfileUpdate = { ...lastProfileUpdate, ...values };
-          return [];
-        },
-      }),
-    }),
-  }),
-}));
+mock.module("@/db", mockDb);
+mock.module("@/server/lib/auth-context", mockAuthContext);
 
-mock.module("@/server/lib/auth-context", () => ({
-  requireActor: async () => currentActor,
-  requireRole: (actor: { role: string }, roles: string[]) => {
-    if (!roles.includes(actor.role)) {
-      throw new HTTPException(403, { message: "Vous n’avez pas les droits nécessaires pour cette action." });
-    }
-  },
-}));
+function lastProfileUpdate(): Record<string, any> {
+  return Object.assign({}, ...harness.recordedUpdates.map((u) => u.values));
+}
 
 mock.module("@/server/lib/organization", () => ({
   ensureOrganizationProfile: async () => {},
-  getOrganizationDetail: async (organizationId: string) => ({
-    id: organizationId,
-    name: "Agence Test",
-    slug: "agence-test",
-    logo: null,
-    onboardedAt:
-      lastProfileUpdate.onboardedAt instanceof Date ? lastProfileUpdate.onboardedAt.toISOString() : null,
-    contactEmail: null,
-    contactPhone: null,
-    address: null,
-    city: null,
-    country: "Sénégal",
-    website: null,
-    description: null,
-    legalName: null,
-    registrationNumber: null,
-    taxId: null,
-    defaultManagementFeeBasis: lastProfileUpdate.defaultManagementFeeBasis ?? null,
-    defaultFeePercent: lastProfileUpdate.defaultFeePercent ?? null,
-    defaultFeeAmount: lastProfileUpdate.defaultFeeAmount ?? null,
-  }),
+  getOrganizationDetail: async (organizationId: string) => {
+    const written = lastProfileUpdate();
+    return {
+      id: organizationId,
+      name: "Agence Test",
+      slug: "agence-test",
+      logo: null,
+      onboardedAt:
+        written.onboardedAt instanceof Date ? written.onboardedAt.toISOString() : null,
+      contactEmail: null,
+      contactPhone: null,
+      address: null,
+      city: null,
+      country: "Sénégal",
+      website: null,
+      description: null,
+      legalName: null,
+      registrationNumber: null,
+      taxId: null,
+      defaultManagementFeeBasis: written.defaultManagementFeeBasis ?? null,
+      defaultFeePercent: written.defaultFeePercent ?? null,
+      defaultFeeAmount: written.defaultFeeAmount ?? null,
+    };
+  },
 }));
 
 mock.module("@/lib/auth", () => ({
@@ -111,35 +80,33 @@ async function patchOrganization(body: unknown) {
 }
 
 beforeEach(() => {
-  currentActor = { ...ownerActor };
-  slugSelectResult = [];
-  updates = [];
-  lastProfileUpdate = {};
+  resetHarness();
+  harness.actor = { ...ownerActor };
   authCalls = [];
 });
 
 describe("PATCH /organization", () => {
   test("a manager gets 403 and nothing is written", async () => {
-    currentActor = { ...managerActor };
+    harness.actor = { ...managerActor };
     const response = await patchOrganization({ name: "Hack" });
     expect(response.status).toBe(403);
     expect(authCalls).toHaveLength(0);
-    expect(updates).toHaveLength(0);
+    expect(harness.recordedUpdates).toHaveLength(0);
   });
 
   test("a slug taken by another agency gets 409 without touching auth or profile", async () => {
-    slugSelectResult = [{ id: "other-org" }];
+    harness.selectQueue = [[{ id: "other-org" }]];
     const response = await patchOrganization({ slug: "taken-slug" });
     expect(response.status).toBe(409);
     expect(authCalls).toHaveLength(0);
-    expect(updates).toHaveLength(0);
+    expect(harness.recordedUpdates).toHaveLength(0);
   });
 
   test("onboarded:true persists onboardedAt and returns it with the owner role", async () => {
     const response = await patchOrganization({ onboarded: true });
     expect(response.status).toBe(200);
-    expect(updates).toHaveLength(1);
-    expect(updates[0]!.onboardedAt).toBeInstanceOf(Date);
+    expect(harness.recordedUpdates).toHaveLength(1);
+    expect((harness.recordedUpdates[0]!.values as any).onboardedAt).toBeInstanceOf(Date);
     const body = await response.json();
     expect(body.data.role).toBe("owner");
     expect(typeof body.data.onboardedAt).toBe("string");
@@ -154,9 +121,9 @@ describe("PATCH /organization", () => {
     expect(response.status).toBe(200);
     // Identity fields were untouched, so the Better Auth plugin is not called.
     expect(authCalls).toHaveLength(0);
-    expect(updates).toHaveLength(1);
-    expect(updates[0]!.defaultManagementFeeBasis).toBe("percent_collected");
-    expect(updates[0]!.defaultFeePercent).toBe("25");
-    expect(updates[0]!.defaultFeeAmount).toBe("5000");
+    expect(harness.recordedUpdates).toHaveLength(1);
+    expect((harness.recordedUpdates[0]!.values as any).defaultManagementFeeBasis).toBe("percent_collected");
+    expect((harness.recordedUpdates[0]!.values as any).defaultFeePercent).toBe("25");
+    expect((harness.recordedUpdates[0]!.values as any).defaultFeeAmount).toBe("5000");
   });
 });

@@ -4,8 +4,13 @@ import {
   addPeriod,
   computeRenewalPeriod,
   generatePaymentReference,
+  graceUntil,
   newSubscriptionPeriod,
+  priceForPlan,
   resolveAccess,
+  trialEndsAt,
+  TRIAL_DAYS,
+  GRACE_DAYS,
 } from "@/server/lib/billing";
 
 const utc = (s: string) => new Date(s);
@@ -51,8 +56,7 @@ describe("references", () => {
   });
 });
 
-describe("resolveAccess", () => {
-  const now = utc("2026-10-13T00:00:00Z");
+describe("resolveAccess", () => {  const now = utc("2026-10-13T00:00:00Z");
   test("active within period is allowed", () => {
     const r = resolveAccess({ status: "active", currentPeriodEnd: utc("2026-11-01T00:00:00Z"), trialEndsAt: null, graceUntil: null }, now);
     expect(r).toEqual({ allowed: true, access: "active", inGrace: false });
@@ -80,5 +84,30 @@ describe("resolveAccess", () => {
   test("trialing within trial is allowed", () => {
     const r = resolveAccess({ status: "trialing", currentPeriodEnd: null, trialEndsAt: utc("2026-10-20T00:00:00Z"), graceUntil: null }, now);
     expect(r.allowed).toBe(true);
+  });
+  test("a notified (unverified) renewal keeps an already-paid period", () => {
+    const r = resolveAccess({ status: "pending_payment", currentPeriodEnd: utc("2026-11-01T00:00:00Z"), trialEndsAt: null, graceUntil: null }, now);
+    expect(r.allowed).toBe(true);
+  });
+  test("cancelled keeps access until the paid-through date, then blocks", () => {
+    const kept = resolveAccess({ status: "cancelled", currentPeriodEnd: utc("2026-11-01T00:00:00Z"), trialEndsAt: null, graceUntil: null }, now);
+    expect(kept.allowed).toBe(true);
+    const over = resolveAccess({ status: "cancelled", currentPeriodEnd: utc("2026-09-01T00:00:00Z"), trialEndsAt: null, graceUntil: null }, now);
+    expect(over.allowed).toBe(false);
+  });
+});
+
+describe("pricing and policy constants", () => {
+  test("priceForPlan reads the DB row, never the client", () => {
+    const plan = { monthlyPriceXof: 5000, annualPriceXof: 50000 };
+    expect(priceForPlan(plan, "monthly")).toBe(5000);
+    expect(priceForPlan(plan, "annual")).toBe(50000);
+  });
+  test("trial lasts 14 days, grace lasts 7 days", () => {
+    expect(TRIAL_DAYS).toBe(14);
+    expect(GRACE_DAYS).toBe(7);
+    const from = utc("2026-10-13T00:00:00Z");
+    expect(trialEndsAt(from).toISOString()).toBe("2026-10-27T00:00:00.000Z");
+    expect(graceUntil(from).toISOString()).toBe("2026-10-20T00:00:00.000Z");
   });
 });

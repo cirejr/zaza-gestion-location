@@ -118,5 +118,39 @@ export async function runBillingCron(now = new Date()) {
     }
   }
 
+  // 5. Trial reminders at T-3 and T-1 (same dedupe rule as above).
+  for (const days of [3, 1]) {
+    const from = new Date(now.getTime() + (days - 0.5) * 24 * 60 * 60 * 1000);
+    const to = new Date(now.getTime() + (days + 0.5) * 24 * 60 * 60 * 1000);
+    const trials = await db.select().from(subscriptions).where(eq(subscriptions.status, "trialing"));
+    for (const sub of trials) {
+      if (!sub.trialEndsAt) continue;
+      const end = new Date(sub.trialEndsAt);
+      if (end < from || end > to) continue;
+      const since = new Date(now.getTime() - 20 * 60 * 60 * 1000);
+      const recent = await db.select().from(subscriptionEvents).where(eq(subscriptionEvents.subscriptionId, sub.id));
+      const already = recent.some(
+        (e) =>
+          e.createdAt &&
+          new Date(e.createdAt) > since &&
+          (e.payload as { trialReminderDays?: number } | null)?.trialReminderDays === days,
+      );
+      if (already) continue;
+      await db.insert(subscriptionEvents).values({
+        agencyId: sub.agencyId,
+        subscriptionId: sub.id,
+        kind: "expired",
+        payload: { source: "trial_reminder", trialReminderDays: days },
+      });
+      await notifyAgency(db, sub.agencyId, {
+        type: "billing_trial_expiring",
+        title: `Essai gratuit : plus que ${days} jour${days > 1 ? "s" : ""}`,
+        body: `Votre essai se termine le ${end.toLocaleDateString("fr-FR")}. Régularisez votre paiement pour garder l'accès.`,
+        href: "/settings/abonnement",
+      });
+      summary.reminders += 1;
+    }
+  }
+
   return summary;
 }

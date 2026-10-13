@@ -14,7 +14,9 @@ type SubscriptionPayload = {
     currentPeriodEnd: string | null;
     trialEndsAt: string | null;
     plan: string;
+    cancelAtPeriodEnd: boolean;
   } | null;
+  plan: { name: string; monthlyPriceXof: number; annualPriceXof: number } | null;
   access: { allowed: boolean; access: string; inGrace: boolean } | null;
 };
 
@@ -37,6 +39,7 @@ export default async function SubscriptionSettingsPage() {
       />
       <ManualBilling
         subscription={current.data.subscription}
+        plan={current.data.plan}
         access={current.data.access}
         plans={plans.data}
         instructions={instructions.data}
