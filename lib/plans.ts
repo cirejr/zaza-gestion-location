@@ -1,6 +1,10 @@
 /**
- * Plans d'abonnement Naya — montants fixes côté serveur.
- * Utilisés par le client SasPay et les routes d'abonnement.
+ * Montants de repli du flux passerelle historique (SasPay gelé).
+ *
+ * Source de vérité : la table `subscription_plans` (ligne `standard`,
+ * seed 5000/50000 XOF) lue côté serveur par `gatewayPrices()` et par le flux
+ * manuel. Ces constantes ne servent que de repli quand la ligne seed est
+ * absente, et d'affichage statique dans l'ancien composant d'abonnement.
  * Les montants sont des chaînes décimales conformément à la spec SasPay.
  */
 export const subscriptionPlans = {

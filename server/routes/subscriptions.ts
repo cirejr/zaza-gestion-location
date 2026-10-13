@@ -3,15 +3,33 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { getDb } from "@/db";
-import { subscriptions, users, payments, buildings, subscriptionPayments } from "@/db/schema";
+import { subscriptionPlans as subscriptionPlansTable, subscriptions, users, payments, buildings, subscriptionPayments } from "@/db/schema";
 import { createCheckoutSession, getCheckoutStatus, verifyPayment, verifySaspayWebhook, cancelCheckoutSession } from "@/lib/saspay";
-import { subscriptionPlans } from "@/lib/plans";
+import { subscriptionPlans as legacyPlanAmounts } from "@/lib/plans";
 import { z as zz } from "zod";
 import type { ApiEnv } from "@/server/session-middleware";
 import { requireActor, requireRole } from "@/server/lib/auth-context";
 import { parseBody, parseUuid } from "@/server/lib/http";
 
 const router = new Hono<ApiEnv>;
+
+/**
+ * Gateway-flow pricing reads the DB `standard` plan (seeded 5000/50000 XOF)
+ * instead of trusting hardcoded constants. Falls back to the legacy
+ * constants only when the seed row is missing (e.g. pre-0016 database).
+ */
+async function gatewayPrices(plan: "monthly" | "annual"): Promise<{ amount: string; currency: string }> {
+  const [row] = await getDb()
+    .select()
+    .from(subscriptionPlansTable)
+    .where(eq(subscriptionPlansTable.code, "standard"))
+    .limit(1);
+  if (row?.isActive) {
+    const xof = plan === "annual" ? row.annualPriceXof : row.monthlyPriceXof;
+    return { amount: `${xof}.00`, currency: "XOF" };
+  }
+  return legacyPlanAmounts[plan];
+}
 
 /** Input for creating a new subscription. */
 const subscriptionInput = zz.object({
@@ -67,8 +85,8 @@ router.post("/", async (c) => {
     .where(and(eq(subscriptions.agencyId, agencyId), eq(subscriptions.status, "active")))) as any;
   if (countResult.total > 0) throw new HTTPException(409, { message: "Cette agence possède déjà un abonnement actif." });
 
-  // Détermine les montants selon le plan
-  const { amount, currency } = subscriptionPlans[body.plan as keyof typeof subscriptionPlans];
+  // Détermine les montants selon le plan (source DB, cf. gatewayPrices)
+  const { amount, currency } = await gatewayPrices(body.plan);
 
   // Création d'un abonnement status=pending avec les IDs SasPay
   const [subscription] = (await db
@@ -183,9 +201,9 @@ router.get("/:id/status", async (c) => {
     if (status.status === "PAID") {
       const payment = await verifyPayment(c, subscription.saspay_payment_id!);
 
-      // Activation uniquement si SUCCESS + montants/concordes
+      // Activation uniquement si SUCCESS + montants/concordes (prix DB)
       if (payment?.status === "SUCCESS") {
-        const expectedAmount = subscription.plan === "annual" ? "50000.00" : "5000.00";
+        const { amount: expectedAmount } = await gatewayPrices(subscription.plan);
         if (payment.requested_amount === expectedAmount && payment.currency === "XOF") {
           const now = new Date();
           const currentPeriodEnd = subscription.currentPeriodEnd
@@ -247,8 +265,8 @@ router.post("/:id/renew", async (c) => {
     return c.json({ error: "Abonnement déjà actif" }, 400);
   }
 
-  const plan = subscription.plan as keyof typeof subscriptionPlans;
-  const { amount, currency } = subscriptionPlans[plan];
+  const plan = subscription.plan as "monthly" | "annual";
+  const { amount, currency } = await gatewayPrices(plan);
 
   // Session existante : best-effort cancel avant recreation
   if (subscription.saspay_checkout_id) {
