@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
-import { harness, mockAuthContext, mockDb, mockPlatformAdmin, resetHarness } from "@/server/test-utils/mock-harness";
+import { harness, mockAuthContext, mockDb, mockPlatformAdmin, resetHarness, seenJson } from "@/server/test-utils/mock-harness";
 
 /**
  * Admin verification tests, sharing the process-global mocks from
@@ -59,6 +59,7 @@ describe("overview counts", () => {
       [{ total: 1 }], // past_due
       [{ total: 0 }], // open closures
       [{ total: 1 }], // pending (awaiting agency signal)
+      [{ total: 6 }], // agencies
       [], // recent confirmed
       [], // expiring
     ];
@@ -68,6 +69,57 @@ describe("overview counts", () => {
     expect(body.data.pending).toBe(3);
     expect(body.data.awaitingSignal).toBe(1);
     expect(body.data.active).toBe(2);
+    expect(body.data.agencies).toBe(6);
+  });
+});
+
+describe("agencies directory", () => {
+  test("lists every agency with contact, size and subscription state", async () => {
+    const { default: router } = await import("./admin-billing");
+    const org = { id: "org-1", name: "Agence Test", slug: "agence-test", createdAt: new Date().toISOString() };
+    harness.selectQueue = [
+      [org], // organizations
+      [{ organizationId: "org-1", contactEmail: "a@test.fr", contactPhone: "+221770000000", city: "Dakar" }], // profiles
+      [{ org: "org-1", total: 3 }], // member counts
+      [{ agencyId: "org-1", status: "active", plan: "monthly", currentPeriodEnd: new Date().toISOString(), cancelAtPeriodEnd: false }], // subscriptions
+    ];
+    const response = await router.request("/admin/billing/agencies");
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.data).toHaveLength(1);
+    expect(body.data[0]).toMatchObject({
+      id: "org-1",
+      name: "Agence Test",
+      contactEmail: "a@test.fr",
+      memberCount: 3,
+    });
+    expect(body.data[0].subscription.status).toBe("active");
+  });
+
+  test("agencies without subscription or profile render cleanly", async () => {
+    const { default: router } = await import("./admin-billing");
+    harness.selectQueue = [
+      [{ id: "org-9", name: "Sans Abonnement", slug: null, createdAt: new Date().toISOString() }],
+      [],
+      [],
+      [],
+    ];
+    const response = await router.request("/admin/billing/agencies");
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.data[0].subscription).toBeNull();
+    expect(body.data[0].memberCount).toBe(0);
+  });
+});
+
+describe("requests list filtering", () => {
+  test("comma-separated statuses query the whole live queue at once", async () => {
+    const { default: router } = await import("./admin-billing");
+    harness.selectQueue = [[{ request: { id: "r1" }, agencyName: "Agence Test" }]];
+    const response = await router.request("/admin/billing/requests?status=pending,notified");
+    expect(response.status).toBe(200);
+    // The single query filters on both live states (no N+1, no second call).
+    expect(harness.whereArgs.some((args) => seenJson(args).includes("pending") && seenJson(args).includes("notified"))).toBe(true);
   });
 });
 

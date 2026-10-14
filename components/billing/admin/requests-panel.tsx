@@ -13,8 +13,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Spinner } from "@/components/ui/spinner";
 import { METHODS, REQUEST_STATUSES, type RequestDetail, type RequestRow } from "./types";
 
+export const LIVE_QUEUE = "pending,notified";
+
 export function RequestsPanel({ initialRequests }: { initialRequests: RequestRow[] }) {
-  const [status, setStatus] = useState("notified");
+  const [status, setStatus] = useState(LIVE_QUEUE);
   const [method, setMethod] = useState("all");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -124,6 +126,7 @@ export function RequestsPanel({ initialRequests }: { initialRequests: RequestRow
             <Select value={status} onValueChange={(v) => setStatus(String(v))}>
               <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
               <SelectContent>
+                <SelectItem value={LIVE_QUEUE}>À traiter</SelectItem>
                 {REQUEST_STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
               </SelectContent>
             </Select>

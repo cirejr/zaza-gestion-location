@@ -11,6 +11,7 @@ type Overview = {
   active: number;
   pending: number;
   awaitingSignal: number;
+  agencies: number;
   expired: number;
   openClosures: number;
   expiringCount: number;
@@ -39,6 +40,7 @@ export default async function AdminOverviewPage() {
   }
 
   const stats = [
+    { label: "Agences inscrites", value: overview?.agencies ?? 0, href: "/admin/agences" },
     { label: "Abonnements actifs", value: overview?.active ?? 0, href: "/admin/abonnements" },
     {
       label: "Paiements à vérifier",
@@ -61,7 +63,7 @@ export default async function AdminOverviewPage() {
         <p className="text-sm text-muted-foreground">Santé des abonnements et file de vérification manuelle.</p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {stats.map((stat) => (
           <Link key={stat.label} href={stat.href}>
             <Card className={stat.highlight ? "border-primary" : undefined}>

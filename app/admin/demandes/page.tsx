@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export default async function AdminRequestsPage() {
   let requests: RequestRow[] = [];
   try {
-    const response = await serverApiFetch<{ data: RequestRow[] }>("/api/admin/billing/requests?status=notified");
+    const response = await serverApiFetch<{ data: RequestRow[] }>("/api/admin/billing/requests?status=pending,notified");
     requests = response.data;
   } catch (error) {
     if (error instanceof ServerApiError && error.status === 403) return <AdminDenied />;
@@ -19,7 +19,7 @@ export default async function AdminRequestsPage() {
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-bold">Demandes de paiement</h1>
-        <p className="text-sm text-muted-foreground">File de vérification manuelle, par défaut les signalements en attente.</p>
+        <p className="text-sm text-muted-foreground">File active par défaut : demandes créées et paiements signalés à vérifier.</p>
       </div>
       <RequestsPanel initialRequests={requests} />
     </div>

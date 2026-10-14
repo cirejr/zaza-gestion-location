@@ -112,6 +112,7 @@ function chain(rows: any[]): any {
     return chain(rows);
   };
   pending.orderBy = (..._args: any[]) => chain(rows);
+  pending.groupBy = (..._args: any[]) => chain(rows);
   pending.limit = async (_n?: number) => rows;
   pending.offset = (..._args: any[]) => chain(rows);
   return pending;

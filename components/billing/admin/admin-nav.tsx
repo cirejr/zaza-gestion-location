@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ClipboardList, CreditCard, LayoutDashboard, Tags, type LucideIcon } from "lucide-react";
+import { Building2, ClipboardList, CreditCard, LayoutDashboard, Tags, type LucideIcon } from "lucide-react";
 
 export type AdminNavItem = { label: string; href: string; icon: LucideIcon; badge?: number };
 
 export function adminNavItems(pending: number): AdminNavItem[] {
   return [
     { label: "Vue d’ensemble", href: "/admin", icon: LayoutDashboard },
+    { label: "Agences", href: "/admin/agences", icon: Building2 },
     { label: "Demandes", href: "/admin/demandes", icon: ClipboardList, badge: pending },
     { label: "Abonnements", href: "/admin/abonnements", icon: CreditCard },
     { label: "Tarifs & paiements", href: "/admin/tarifs", icon: Tags },

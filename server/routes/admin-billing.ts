@@ -5,6 +5,7 @@ import { z } from "zod";
 import { getDb } from "@/db";
 import {
   closureRequests,
+  organizationMembers,
   organizationProfiles,
   organizations,
   subscriptionEvents,
@@ -67,7 +68,7 @@ const instructionInput = z.object({
 router.get("/admin/billing/overview", async (c) => {
   await requirePlatformAdmin(c);
   const db = getDb();
-  const [[active], [pending], [expired], [closures], [awaiting], recent] = await Promise.all([
+  const [[active], [pending], [expired], [closures], [awaiting], [agencyCount], recent] = await Promise.all([
     db.select({ total: count() }).from(subscriptions).where(eq(subscriptions.status, "active")),
     db
       .select({ total: count() })
@@ -81,6 +82,7 @@ router.get("/admin/billing/overview", async (c) => {
       .select({ total: count() })
       .from(subscriptionPaymentRequests)
       .where(eq(subscriptionPaymentRequests.status, "pending")),
+    db.select({ total: count() }).from(organizations),
     db
       .select()
       .from(subscriptionPaymentRequests)
@@ -98,12 +100,61 @@ router.get("/admin/billing/overview", async (c) => {
       active: Number(active?.total ?? 0),
       pending: Number(pending?.total ?? 0),
       awaitingSignal: Number(awaiting?.total ?? 0),
+      agencies: Number(agencyCount?.total ?? 0),
       expired: Number(expired?.total ?? 0),
       openClosures: Number(closures?.total ?? 0),
       expiringCount: expiring.length,
       expiring,
       recent,
     },
+  });
+});
+
+/** Agency directory: every organization with contact, size and subscription state. */
+router.get("/admin/billing/agencies", async (c) => {
+  await requirePlatformAdmin(c);
+  const db = getDb();
+  const orgs = await db.select().from(organizations).orderBy(desc(organizations.createdAt)).limit(200);
+  const ids = orgs.map((org) => org.id);
+  const [profiles, counts, subs] = await Promise.all([
+    ids.length
+      ? db.select().from(organizationProfiles).where(inArray(organizationProfiles.organizationId, ids))
+      : [],
+    ids.length
+      ? db
+        .select({ org: organizationMembers.organizationId, total: count() })
+        .from(organizationMembers)
+        .where(inArray(organizationMembers.organizationId, ids))
+        .groupBy(organizationMembers.organizationId)
+      : [],
+    ids.length ? db.select().from(subscriptions).where(inArray(subscriptions.agencyId, ids)) : [],
+  ]);
+  const profileByOrg = new Map(profiles.map((p) => [p.organizationId, p]));
+  const countByOrg = new Map(counts.map((row) => [row.org, Number(row.total)]));
+  const subByAgency = new Map(subs.map((sub) => [sub.agencyId, sub]));
+  return c.json({
+    data: orgs.map((org) => {
+      const profile = profileByOrg.get(org.id);
+      const sub = subByAgency.get(org.id);
+      return {
+        id: org.id,
+        name: org.name,
+        slug: org.slug,
+        createdAt: org.createdAt,
+        contactEmail: profile?.contactEmail ?? null,
+        contactPhone: profile?.contactPhone ?? null,
+        city: profile?.city ?? null,
+        memberCount: countByOrg.get(org.id) ?? 0,
+        subscription: sub
+          ? {
+            status: sub.status,
+            plan: sub.plan,
+            currentPeriodEnd: sub.currentPeriodEnd,
+            cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+          }
+          : null,
+      };
+    }),
   });
 });
 
@@ -126,7 +177,10 @@ router.get("/admin/billing/requests", async (c) => {
   const from = c.req.query("from");
   const to = c.req.query("to");
   const conditions = [];
-  if (status) conditions.push(eq(subscriptionPaymentRequests.status, status as never));
+  // Comma-separated statuses, e.g. `status=pending,notified` for the live queue.
+  const statuses = (status ?? "").split(",").map((value) => value.trim()).filter(Boolean);
+  if (statuses.length === 1) conditions.push(eq(subscriptionPaymentRequests.status, statuses[0] as never));
+  else if (statuses.length > 1) conditions.push(inArray(subscriptionPaymentRequests.status, statuses as never[]));
   if (method) conditions.push(eq(subscriptionPaymentRequests.method, method as never));
   if (from) conditions.push(gte(subscriptionPaymentRequests.createdAt, new Date(from)));
   if (to) conditions.push(lte(subscriptionPaymentRequests.createdAt, new Date(to)));
