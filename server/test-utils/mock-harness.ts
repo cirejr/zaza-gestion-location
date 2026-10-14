@@ -1,5 +1,7 @@
 import { HTTPException } from "hono/http-exception";
 import {
+  authUsers,
+  closureRequests,
   subscriptionPaymentRequests,
   subscriptionPlans,
   subscriptions,
@@ -24,6 +26,9 @@ export const harness = {
   subs: [] as any[],
   requests: [] as any[],
   users: [{ id: "user-1" }] as any[],
+  closures: [] as any[],
+  /** Auth-user policy stamp rows (policy gate on POST /billing/requests). */
+  policyRows: [{ version: "2026-10-01", email: "owner@test.fr" }] as any[],
   /** Agency scoping simulation for request reads (mirrors the WHERE predicate). */
   agencyFilter: true,
   /** FIFO exact results for bespoke selects (slug checks, counts, …). */
@@ -52,6 +57,8 @@ export function resetHarness() {
   harness.subs = [];
   harness.requests = [];
   harness.users = [{ id: "user-1" }];
+  harness.closures = [];
+  harness.policyRows = [{ version: "2026-10-01", email: "owner@test.fr" }];
   harness.agencyFilter = true;
   harness.selectQueue = [];
   harness.claimRows = [];
@@ -74,6 +81,8 @@ function tableName(table: unknown) {
   if (table === subscriptions) return "subscriptions";
   if (table === subscriptionPaymentRequests) return "subscription_payment_requests";
   if (table === users) return "users";
+  if (table === authUsers) return "user";
+  if (table === closureRequests) return "closure_requests";
   return "other";
 }
 
@@ -86,6 +95,8 @@ function rowsFor(table: unknown): any[] {  if (harness.selectQueue.length) retur
     return harness.requests.filter((r) => !r.agencyId || r.agencyId === org);
   }
   if (table === users) return harness.users;
+  if (table === authUsers) return harness.policyRows;
+  if (table === closureRequests) return harness.closures;
   return [];
 }
 

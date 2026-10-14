@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Building2, CreditCard, UserRound, UsersRound, type LucideIcon } from "lucide-react";
+import { Building2, CreditCard, ScrollText, UserRound, UsersRound, type LucideIcon } from "lucide-react";
 
 const items: Array<{ label: string; href: string; icon: LucideIcon }> = [
   { label: "Compte", href: "/settings", icon: UserRound },
   { label: "Agence", href: "/settings/organisation", icon: Building2 },
   { label: "Équipe", href: "/settings/equipe", icon: UsersRound },
-  { label: "Abonnement", href: "/settings/abonnement", icon: CreditCard },
+  { label: "Abonnement", href: "/billing/subscription", icon: CreditCard },
+  { label: "Politique", href: "/policy", icon: ScrollText },
 ];
 
 function isActive(pathname: string, href: string) {

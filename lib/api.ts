@@ -28,8 +28,8 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
     // Gated premium write without an active subscription: greet the user
     // with the subscription page instead of a bare error. The billing page
     // itself never returns 402, so this cannot loop.
-    if (response.status === 402 && typeof window !== "undefined" && !window.location.pathname.startsWith("/settings/abonnement")) {
-      window.location.href = "/settings/abonnement?required=1";
+    if (response.status === 402 && typeof window !== "undefined" && !window.location.pathname.startsWith("/billing/subscription")) {
+      window.location.href = "/billing/subscription?required=1";
     }
     throw new ApiError(message, response.status, body);
   }

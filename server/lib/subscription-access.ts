@@ -1,9 +1,11 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
+import { createMiddleware } from "hono/factory";
 import { getDb } from "@/db";
-import { notifications, subscriptions, users } from "@/db/schema";
+import { authUsers, notifications, subscriptions, users } from "@/db/schema";
 import { resolveAccess } from "@/server/lib/billing";
-import type { AgencyActor } from "@/server/lib/auth-context";
+import { requireActor, type AgencyActor } from "@/server/lib/auth-context";
+import type { ApiEnv } from "@/server/session-middleware";
 
 /** Notify every owner/manager of an agency in-app (existing inbox table). */
 export async function notifyAgency(
@@ -24,6 +26,32 @@ export async function notifyAgency(
       body: input.body,
       href: input.href,
     });
+  }
+}
+
+/** Notify every platform (SaaS) admin in-app, matched by email. No-op when none. */
+export async function notifyPlatformAdmins(
+  tx: { insert: (...args: never[]) => unknown } | ReturnType<typeof getDb>,
+  input: { type: string; title: string; body?: string; href?: string },
+) {
+  const db = tx as ReturnType<typeof getDb>;
+  const admins = await db.select({ email: authUsers.email }).from(authUsers).where(eq(authUsers.role, "admin"));
+  const adminEmails = new Set(admins.map((a) => a.email.toLowerCase()));
+  if (!adminEmails.size) return;
+  const staff = await db
+    .select({ id: users.id, email: users.email })
+    .from(users)
+    .where(inArray(users.role, ["owner", "manager"]));
+  for (const member of staff) {
+    if (member.email && adminEmails.has(member.email.toLowerCase())) {
+      await db.insert(notifications).values({
+        userId: member.id,
+        type: input.type,
+        title: input.title,
+        body: input.body,
+        href: input.href,
+      });
+    }
   }
 }
 
@@ -58,3 +86,16 @@ export async function requireActiveSubscription(actor: AgencyActor, now = new Da
   }
   return { sub, access };
 }
+
+/**
+ * Hono middleware version of the gate, mounted on locked API paths in
+ * `server/app.ts` (dashboard data: buildings, leases, tenants, prospects,
+ * financial records, reports…). Reads and writes behind those paths all
+ * require an active or grace-period subscription; billing, account, admin,
+ * notification, upload and portal paths stay open by design.
+ */
+export const subscriptionLockMiddleware = createMiddleware<ApiEnv>(async (c, next) => {
+  const actor = await requireActor(c);
+  await requireActiveSubscription(actor);
+  await next();
+});

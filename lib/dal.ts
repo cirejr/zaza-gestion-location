@@ -41,5 +41,12 @@ export const getViewer = cache(async (): Promise<ApiUser> => {
   // The agency owner must finish the first-run wizard before reaching the
   // dashboard; managers and invited users are not gated.
   if (user.needsOnboarding) redirect("/onboarding");
+  // Subscription lock: without an active or grace-period subscription the
+  // whole dashboard (shell islands included, so every page) redirects to the
+  // dedicated billing screen. The billing screen itself deliberately uses
+  // `verifySession` instead of `getViewer`, so this cannot loop. Server-side
+  // API enforcement lives in `subscriptionLockMiddleware`, not here.
+  const billing = await serverApiFetch<{ data: { access: { allowed: boolean } } }>("/api/billing/subscription");
+  if (!billing.data.access.allowed) redirect("/billing/subscription");
   return user;
 });

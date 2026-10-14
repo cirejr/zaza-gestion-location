@@ -48,7 +48,23 @@ router.get("/users/me", async (c) => {
   const actor = await requireActor(c);
   await ensureOrganizationProfile(actor.organizationId);
   const organization = await getOrganizationSummary(actor.organizationId);
-  return c.json({ data: { ...actor, organization, needsOnboarding: needsOnboarding(actor.role, organization) } });
+  const session = c.get("session");
+  const [policy] = session?.user
+    ? await getDb()
+      .select({ version: authUsers.policyVersion, acceptedAt: authUsers.policyAcceptedAt })
+      .from(authUsers)
+      .where(eq(authUsers.id, session.user.id))
+      .limit(1)
+    : [];
+  return c.json({
+    data: {
+      ...actor,
+      organization,
+      needsOnboarding: needsOnboarding(actor.role, organization),
+      policyVersion: policy?.version ?? null,
+      policyAcceptedAt: policy?.acceptedAt ?? null,
+    },
+  });
 });
 
 /**

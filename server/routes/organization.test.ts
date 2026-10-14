@@ -23,6 +23,12 @@ function lastProfileUpdate(): Record<string, any> {
 
 mock.module("@/server/lib/organization", () => ({
   ensureOrganizationProfile: async () => {},
+  getOrganizationSummary: async () => null,
+  needsOnboarding: () => false,
+  // Union surface: mock.module is process-global, so leases/prospects
+  // routes (tested in creation-gates.test.ts) need this export to exist.
+  // Their tests 402 before reaching it.
+  loadAgencyBranding: async () => ({}),
   getOrganizationDetail: async (organizationId: string) => {
     const written = lastProfileUpdate();
     return {
@@ -57,6 +63,16 @@ mock.module("@/lib/auth", () => ({
         return {};
       },
     },
+  },
+  // Union surface (process-global mock): tenant-auth and uploads import
+  // these pure helpers; tested routes 401/402 before reaching them.
+  PORTAL_EMAIL_DOMAIN: "portal.naya.app",
+  isPortalEmail: (email: string | null | undefined) =>
+    Boolean(email?.toLowerCase().endsWith("@portal.naya.app")),
+  isPortalSession: (session: any) => !session?.user,
+  isStaffSession: (session: any) => Boolean(session?.user?.email),
+  createAuth: () => {
+    throw new Error("auth not available in tests");
   },
 }));
 

@@ -113,7 +113,7 @@ async function TeamSection() {
         </CardContent>
       </Card>
       <p className="text-sm text-muted-foreground">
-        Besoin de quitter cette agence ? <Link href="/settings/abonnement" className="font-semibold text-foreground underline-offset-4 hover:underline">Gérer mon accès</Link>.
+        Besoin de quitter cette agence ? <Link href="/billing/subscription" className="font-semibold text-foreground underline-offset-4 hover:underline">Gérer mon accès</Link>.
       </p>
     </>
   );

@@ -44,9 +44,6 @@ router.get("/buildings", async (c) => {
 router.post("/buildings", async (c) => {
   const actor = await requireActor(c);
   requireRole(actor, ["owner"]);
-  // SaaS enforcement point: creating a property requires an active (or
-  // trial/grace) subscription. Reads stay open so an expired agency keeps
-  // login, billing and account access; data is never deleted.
   await requireActiveSubscription(actor);
   const data = await parseBody(c, buildingInput);
   const db = getDb();

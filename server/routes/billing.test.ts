@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { Hono } from "hono";
 import { harness, mockAuthContext, mockDb, resetHarness, scopedToAgency } from "@/server/test-utils/mock-harness";
 
 /**
@@ -17,10 +18,19 @@ mock.module("@/db", mockDb);
 mock.module("@/server/lib/auth-context", mockAuthContext);
 
 const ownerActor = { id: "user-1", organizationId: "org-1", role: "owner", email: "o@t.fr", name: "O" };
+const PLAN_ID = "11111111-1111-4111-8111-111111111111";
 
 async function call(path: string, init?: RequestInit) {
   const { default: router } = await import("./billing");
-  return router.request(path, {
+  // Production mounts sessionMiddleware before this router; mirror that so
+  // session-dependent guards (policy acceptance) exercise their real path.
+  const app = new Hono();
+  app.use(async (c, next) => {
+    c.set("session" as never, { user: { id: "auth-1", email: "o@t.fr", name: "O" } } as never);
+    await next();
+  });
+  app.route("/", router);
+  return app.request(path, {
     ...init,
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
   });
@@ -29,7 +39,7 @@ async function call(path: string, init?: RequestInit) {
 beforeEach(() => {
   resetHarness();
   harness.actor = { ...ownerActor };
-  harness.plans = [{ id: "plan-1", code: "standard", isActive: true, monthlyPriceXof: 5000, annualPriceXof: 50000 }];
+  harness.plans = [{ id: PLAN_ID, code: "standard", isActive: true, monthlyPriceXof: 5000, annualPriceXof: 50000 }];
   harness.subs = [{ id: "sub-1", agencyId: "org-1", status: "active", plan: "monthly", planId: "plan-1" }];
   harness.updateReturning = [];
   harness.insertReturning = [];
@@ -102,11 +112,21 @@ describe("payment notification (§5, §9)", () => {
 
 describe("server-side pricing (§9)", () => {
   test("an inactive plan cannot be used", async () => {
-    harness.plans = [{ id: "plan-1", code: "standard", isActive: false, monthlyPriceXof: 5000, annualPriceXof: 50000 }];
+    harness.plans = [{ id: PLAN_ID, code: "standard", isActive: false, monthlyPriceXof: 5000, annualPriceXof: 50000 }];
     const response = await call("/billing/requests", {
       method: "POST",
-      body: JSON.stringify({ planId: "plan-1", billingInterval: "monthly", method: "wave" }),
+      body: JSON.stringify({ planId: PLAN_ID, billingInterval: "monthly", method: "wave" }),
     });
     expect(response.status).toBe(400);
+  });
+
+  test("paying requires prior policy acceptance (403)", async () => {
+    harness.policyRows = [];
+    const response = await call("/billing/requests", {
+      method: "POST",
+      body: JSON.stringify({ planId: PLAN_ID, billingInterval: "monthly", method: "wave" }),
+    });
+    expect(response.status).toBe(403);
+    expect(harness.recordedInserts).toHaveLength(0);
   });
 });

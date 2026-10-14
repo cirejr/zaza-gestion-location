@@ -76,7 +76,7 @@ export function ManualBilling({
   instructions,
   requests,
 }: {
-  subscription: { status: string; currentPeriodEnd: string | null; trialEndsAt: string | null; plan: string; cancelAtPeriodEnd: boolean } | null;
+  subscription: { status: string; currentPeriodStart: string | null; currentPeriodEnd: string | null; graceUntil: string | null; trialEndsAt: string | null; plan: string; cancelAtPeriodEnd: boolean } | null;
   plan: { name: string; monthlyPriceXof: number; annualPriceXof: number } | null;
   access: { allowed: boolean; access: string; inGrace: boolean } | null;
   plans: BillingPlan[];
@@ -171,8 +171,18 @@ export function ManualBilling({
           {!subscription && (
             <p className="font-medium">Votre agence n’a pas encore d’abonnement. Souscrivez ci-dessous pour activer la gestion (biens, baux, prospects).</p>
           )}
-          {subscription?.currentPeriodEnd && (
-            <p>Payé jusqu’au <strong>{new Intl.DateTimeFormat("fr-FR", { dateStyle: "long" }).format(new Date(subscription.currentPeriodEnd))}</strong></p>
+          {subscription?.currentPeriodStart && (
+            <p>Période en cours : du <strong>{new Intl.DateTimeFormat("fr-FR", { dateStyle: "long" }).format(new Date(subscription.currentPeriodStart))}</strong>
+            {subscription.currentPeriodEnd && (
+              <> au <strong>{new Intl.DateTimeFormat("fr-FR", { dateStyle: "long" }).format(new Date(subscription.currentPeriodEnd))}</strong></>
+            )}</p>
+          )}
+          {access?.inGrace && subscription?.graceUntil && (
+            <p className="font-medium text-amber-600">
+              Période de grâce : il vous reste {Math.max(0, Math.ceil((new Date(subscription.graceUntil).getTime() - Date.now()) / 86400000))} jour(s)
+              (jusqu’au {new Intl.DateTimeFormat("fr-FR", { dateStyle: "long" }).format(new Date(subscription.graceUntil))}).
+              Renouvelez vite pour éviter le blocage.
+            </p>
           )}
           {subscription?.trialEndsAt && subscription.status === "trialing" && (
             <p>Essai gratuit jusqu’au <strong>{new Intl.DateTimeFormat("fr-FR", { dateStyle: "long" }).format(new Date(subscription.trialEndsAt))}</strong></p>
@@ -185,9 +195,9 @@ export function ManualBilling({
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="plans" className="scroll-mt-6">
         <CardHeader>
-          <CardTitle>Choisir une formule</CardTitle>
+          <CardTitle>Choisir / renouveler une formule</CardTitle>
           <CardDescription>Les montants sont fixés côté serveur, en FCFA.</CardDescription>
         </CardHeader>
         <CardContent>
@@ -241,7 +251,7 @@ export function ManualBilling({
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Clock className="size-4" />Demandes en cours ({pending.length})</CardTitle>
+          <CardTitle id="submit-payment" className="flex scroll-mt-6 items-center gap-2"><Clock className="size-4" />Demandes en cours ({pending.length})</CardTitle>
           <CardDescription>Signalez votre paiement après l’avoir effectué. Cela ne vaut pas preuve de paiement.</CardDescription>
         </CardHeader>
         <CardContent className="px-0">

@@ -34,7 +34,7 @@ export async function runBillingCron(now = new Date()) {
       type: "billing_expired",
       title: "Abonnement expiré",
       body: "Votre abonnement a expiré. Vous disposez de 7 jours de grâce.",
-      href: "/settings/abonnement",
+      href: "/billing/subscription",
     });
     summary.markedPastDue += 1;
   }
@@ -56,7 +56,7 @@ export async function runBillingCron(now = new Date()) {
       type: "billing_grace_expired",
       title: "Grâce terminée",
       body: "La période de grâce est terminée. Régularisez votre paiement pour réactiver.",
-      href: "/settings/abonnement",
+      href: "/billing/subscription",
     });
     summary.expired += 1;
   }
@@ -90,7 +90,7 @@ export async function runBillingCron(now = new Date()) {
         type: "billing_expiring",
         title: `Abonnement expire dans ${days} jour${days > 1 ? "s" : ""}`,
         body: `Votre abonnement expire le ${end.toLocaleDateString("fr-FR")}. Renouvelez pour éviter toute interruption.`,
-        href: "/settings/abonnement",
+        href: "/billing/subscription",
       });
       summary.reminders += 1;
     }

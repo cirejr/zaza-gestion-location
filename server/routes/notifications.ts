@@ -6,6 +6,7 @@ import { getDb } from "@/db";
 import { notifications } from "@/db/schema";
 import { channelLabel, defaultChannel, deliverWithFallback, rentReminderMessage, sendRentReminder, sendSmsMessage, sendTwilioRentReminder, type NotificationResult } from "@/lib/notifications";
 import { requireActor, requireRole } from "@/server/lib/auth-context";
+import { requireActiveSubscription } from "@/server/lib/subscription-access";
 import { countValue, pagination, parseBody, parseUuid } from "@/server/lib/http";
 import type { ApiEnv } from "@/server/session-middleware";
 
@@ -49,6 +50,8 @@ function reminderFields(data: {
 router.post("/notifications/rent-reminder", async (c) => {
   const actor = await requireActor(c);
   requireRole(actor, ["owner", "manager"]);
+  // Collection activity is management: gated, while the inbox reads stay open.
+  await requireActiveSubscription(actor);
   const data = await parseBody(c, input);
   const requested = data.channel ?? defaultChannel();
   const message = rentReminderMessage(data);

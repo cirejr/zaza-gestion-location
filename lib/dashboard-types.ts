@@ -16,7 +16,7 @@ export type ApiOrganizationDetail = ApiOrganizationSummary & {
   defaultFeeAmount: string | null;
   role: "owner" | "manager" | "tenant";
 };
-export type ApiUser = { id: string; name: string; email: string; role: "owner" | "manager" | "tenant"; phone?: string | null; organization?: ApiOrganizationSummary | null; needsOnboarding?: boolean };
+export type ApiUser = { id: string; name: string; email: string; role: "owner" | "manager" | "tenant"; phone?: string | null; organization?: ApiOrganizationSummary | null; needsOnboarding?: boolean; policyVersion?: string | null; policyAcceptedAt?: string | null };
 export type ApiBuilding = { id: string; name: string; address: string; city?: string | null; country?: string; unitCount: number; photoUrls?: string[]; createdAt?: string };
 export type ApiApartment = { id: string; buildingId: string; unitNumber: string; floor?: number | null; bedrooms: number; areaSqm?: number | null; rentAmount: string; status: "occupied" | "vacant" | "maintenance" };
 /** Building with its apartments embedded — returned by `/api/buildings/overview`. */

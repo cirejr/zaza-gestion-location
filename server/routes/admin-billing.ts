@@ -4,6 +4,7 @@ import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { getDb } from "@/db";
 import {
+  closureRequests,
   organizationProfiles,
   organizations,
   subscriptionEvents,
@@ -66,13 +67,14 @@ const instructionInput = z.object({
 router.get("/admin/billing/overview", async (c) => {
   await requirePlatformAdmin(c);
   const db = getDb();
-  const [[active], [pending], [expired], recent] = await Promise.all([
+  const [[active], [pending], [expired], [closures], recent] = await Promise.all([
     db.select({ total: count() }).from(subscriptions).where(eq(subscriptions.status, "active")),
     db
       .select({ total: count() })
       .from(subscriptionPaymentRequests)
       .where(eq(subscriptionPaymentRequests.status, "notified")),
     db.select({ total: count() }).from(subscriptions).where(eq(subscriptions.status, "past_due")),
+    db.select({ total: count() }).from(closureRequests).where(eq(closureRequests.status, "open")),
     db
       .select()
       .from(subscriptionPaymentRequests)
@@ -90,11 +92,23 @@ router.get("/admin/billing/overview", async (c) => {
       active: Number(active?.total ?? 0),
       pending: Number(pending?.total ?? 0),
       expired: Number(expired?.total ?? 0),
+      openClosures: Number(closures?.total ?? 0),
       expiringCount: expiring.length,
       expiring,
       recent,
     },
   });
+});
+
+router.get("/admin/billing/closures", async (c) => {
+  await requirePlatformAdmin(c);
+  const rows = await getDb()
+    .select({ closure: closureRequests, agencyName: organizations.name })
+    .from(closureRequests)
+    .leftJoin(organizations, eq(organizations.id, closureRequests.agencyId))
+    .orderBy(desc(closureRequests.createdAt))
+    .limit(100);
+  return c.json({ data: rows });
 });
 
 router.get("/admin/billing/requests", async (c) => {
@@ -273,7 +287,7 @@ router.post("/admin/billing/requests/:id/confirm", async (c) => {
     type: "billing_payment_confirmed",
     title: "Paiement confirmé",
     body: `Votre abonnement est actif jusqu'au ${result.subscription.currentPeriodEnd}. Réf: ${result.request.reference}.`,
-    href: "/settings/abonnement",
+    href: "/billing/subscription",
   });
   return c.json({ data: result });
 });
@@ -309,7 +323,7 @@ router.post("/admin/billing/requests/:id/reject", async (c) => {
     type: "billing_payment_rejected",
     title: "Paiement rejeté",
     body: `Demande ${request.reference} rejetée : ${body.reason.trim()}`,
-    href: "/settings/abonnement",
+    href: "/billing/subscription",
   });
   return c.json({ data: updated });
 });
@@ -378,7 +392,7 @@ router.post("/admin/billing/subscriptions/:id/suspend", async (c) => {  const ad
     type: "billing_suspended",
     title: "Abonnement suspendu",
     body: body.reason.trim(),
-    href: "/settings/abonnement",
+    href: "/billing/subscription",
   });
   return c.json({ data: updated });
 });
@@ -407,7 +421,7 @@ router.post("/admin/billing/subscriptions/:id/reactivate", async (c) => {
   await notifyAgency(db, sub.agencyId, {
     type: "billing_reactivated",
     title: "Abonnement réactivé",
-    href: "/settings/abonnement",
+    href: "/billing/subscription",
   });
   return c.json({ data: updated });
 });

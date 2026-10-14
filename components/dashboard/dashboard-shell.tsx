@@ -87,7 +87,7 @@ const navGroups: Array<{ label: string; items: Array<{ label: string; href: stri
     label: "Agence",
     items: [
       { label: "Équipe", href: "/settings/equipe", icon: UsersRound },
-      { label: "Abonnement", href: "/settings/abonnement", icon: CreditCard },
+      { label: "Abonnement", href: "/billing/subscription", icon: CreditCard },
     ],
   },
 ];

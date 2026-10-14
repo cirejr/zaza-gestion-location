@@ -128,6 +128,11 @@ export const authUsers = pgTable("user", {
   banned: boolean("banned").notNull().default(false),
   banReason: text("ban_reason"),
   banExpires: timestamp("ban_expires", { withTimezone: true }),
+  // Billing-policy acceptance (manual SaaS): version string + timestamp,
+  // stamped server-side after explicit checkbox acceptance at signup
+  // (or later from the billing page for OAuth signups). Audit source.
+  policyVersion: text("policy_version"),
+  policyAcceptedAt: timestamp("policy_accepted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -822,6 +827,26 @@ export const subscriptionPayments = pgTable("subscription_payments", {
 
 export const subscriptionPaymentsRelations = relations(subscriptionPayments, ({ one }) => ({
   subscription: one(subscriptions, { fields: [subscriptionPayments.subscription_id], references: [subscriptions.id] }),
+}));
+
+/**
+ * Account closure / support requests from an agency. Never auto-applied:
+ * a platform admin processes them. Visible to the agency (billing page)
+ * and to admins (billing overview), including during a subscription lock.
+ */
+export const closureRequests = pgTable("closure_requests", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  agencyId: text("agency_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  requestedBy: uuid("requested_by").references(() => users.id, { onDelete: "set null" }),
+  reason: text("reason").notNull(),
+  status: varchar("status", { length: 20 }).notNull().default("open"),
+  decidedBy: text("decided_by").references(() => authUsers.id, { onDelete: "set null" }),
+  decidedAt: timestamp("decided_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  agencyIdx: index("closure_requests_agency_idx").on(table.agencyId),
+  statusIdx: index("closure_requests_status_idx").on(table.status),
 }));
 
 /**

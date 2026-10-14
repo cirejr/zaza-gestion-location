@@ -5,6 +5,8 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
+import { BILLING_POLICY_VERSION, POLICY_PATH } from "@/lib/billing-policy";
+import { apiFetch } from "@/lib/api";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,10 +35,16 @@ export default function AuthForm({ mode, inviteToken }: { mode: AuthMode; invite
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Billing-policy consent: unchecked by default, mandatory for signup.
+  const [policyAccepted, setPolicyAccepted] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    if (mode === "signup" && !policyAccepted) {
+      setError("Veuillez accepter la politique de facturation pour créer votre compte.");
+      return;
+    }
     setLoading(true);
     try {
       const result = mode === "login"
@@ -45,6 +53,19 @@ export default function AuthForm({ mode, inviteToken }: { mode: AuthMode; invite
       if (result.error) {
         setError(errorMessage(result.error));
         return;
+      }
+      // Stamp the explicit policy acceptance server-side for audit
+      // (version + timestamp on the auth user). OAuth signups bypass this
+      // form: the billing page backstop + request gate cover them.
+      if (mode === "signup") {
+        try {
+          await apiFetch("/api/account/policy", {
+            method: "POST",
+            body: JSON.stringify({ version: BILLING_POLICY_VERSION }),
+          });
+        } catch (stampError) {
+          toast.error("Compte créé, mais l’acceptation de la politique n’a pas été enregistrée : acceptez-la depuis la page d’abonnement.");
+        }
       }
       // Bind a pending team invitation to the account. Better Auth accepts the
       // invitation by id and, as a side effect, joins the agency and makes it
@@ -117,6 +138,14 @@ export default function AuthForm({ mode, inviteToken }: { mode: AuthMode; invite
                 <div className="relative"><LockKeyhole className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input id="password" required minLength={8} type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="8 caractères minimum" className="px-10" aria-invalid={Boolean(error)} /><Button type="button" variant="ghost" size="icon-sm" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"} className="absolute right-1 top-1/2 -translate-y-1/2">{showPassword ? <EyeOff /> : <Eye />}</Button></div>
                 <FieldDescription>Utilisez au moins 8 caractères.</FieldDescription>
               </Field>
+              {mode === "signup" && (
+                <label className="flex items-start gap-2 text-xs text-muted-foreground">
+                  <input type="checkbox" checked={policyAccepted} onChange={(event) => setPolicyAccepted(event.target.checked)} className="mt-0.5 size-4" />
+                  <span>
+                    J’ai lu et j’accepte la <a href={POLICY_PATH} target="_blank" rel="noreferrer" className="font-semibold text-primary hover:underline">politique de facturation</a> (abonnement par agence, paiement manuel vérifié).
+                  </span>
+                </label>
+              )}
               <Button type="submit" disabled={loading} className="w-full">
                 {loading ? <><Spinner data-icon="inline-start" />Veuillez patienter...</> : <>{mode === "login" ? "Se connecter" : "Créer mon compte"}<ArrowRight data-icon="inline-end" /></>}
               </Button>

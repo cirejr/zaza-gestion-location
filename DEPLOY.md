@@ -39,8 +39,10 @@ Copier `.env.example` → `.env.local` puis remplir :
 ## 2b. Facturation manuelle (abonnements SaaS)
 
 - Migrer : `bun run db:migrate` (tables `subscription_plans`, `subscription_payment_requests`,
-  `subscription_payment_instructions`, `subscription_events` + colonnes `plan_id`, `trial_ends_at`,
-  `suspended_at`, `suspend_reason`, `grace_until` ; plugin admin Better Auth : `user.role/banned/ban_reason/ban_expires`, `session.impersonated_by`).
+  `subscription_payment_instructions`, `subscription_events`, `closure_requests` + colonnes
+  `plan_id`, `trial_ends_at`, `suspended_at`, `suspend_reason`, `grace_until` ;
+  plugin admin Better Auth : `user.role/banned/ban_reason/ban_expires`, `session.impersonated_by` ;
+  consentement politique : `user.policy_version/policy_accepted_at`).
 - Promouvoir le propriétaire SaaS : `bun scripts/promote-admin.ts vous@domaine.com`
   (l'utilisateur doit s'être connecté une fois avant). Révocation : même commande avec `--revoke`.
 - Renseigner les numéros destinataires dans `/admin/facturation` (onglet Formules & instructions) —
@@ -48,13 +50,19 @@ Copier `.env.example` → `.env.local` puis remplir :
 - Planifier l'expiration côté serveur (jamais de minuteur frontend), une fois par jour :
   `POST /api/admin/billing/cron` avec l'en-tête `x-cron-secret: $CRON_SECRET`
   (Vercel Cron ou minuteur systemd). Sans `CRON_SECRET`, l'endpoint exige une session admin.
-- Point d'application : la création (POST) sur biens, unités, baux, locataires et
-  prospects exige un abonnement actif ou en grâce (402 sinon, avec redirection
-  vers `/settings/abonnement?required=1`) ; lectures, login et facturation
-  restent ouverts. Les données ne sont jamais supprimées.
+- Verrouillage : sans abonnement actif ou en grâce, les API opérationnelles
+  (biens, unités, baux, locataires, prospects, paiements, charges, tickets,
+  réclamations, comptes, rapports — lecture ET écriture) répondent 402, et le
+  tableau de bord redirige vers `/billing/subscription`. Restent ouverts :
+  abonnement, compte (politique, export, fermeture), admin, équipe, notifications,
+  uploads (reçus), portail locataire. Les données ne sont jamais supprimées.
 - Pas d'essai gratuit : sans abonnement actif, la gestion est bloquée jusqu'au
   paiement manuel vérifié. Relances T-7/T-1 avant expiration, grâce de 7 jours
-  après, puis blocage.
+  après, puis verrouillage. L'accès est rétabli dès confirmation du paiement.
+- Politique : `/policy` (publique, version `BILLING_POLICY_VERSION` dans
+  `lib/billing-policy.ts`). Case à cocher obligatoire à l'inscription + acceptation
+  exigée avant toute demande de paiement (couvre aussi Google OAuth).
+  Support optionnel : `NEXT_PUBLIC_SUPPORT_EMAIL`, sinon formulaire de demande.
 
 > Les relances (WhatsApp) et liens de paiement appellent leur fournisseur uniquement quand les identifiants sont renseignés. Sans eux, les endpoints renvoient une réponse de type *preview* (`delivered: false`) ou une erreur JSON claire — pas de plantage. Le code OTP téléphone échoue proprement (« aucun canal de livraison configuré ») tant que `WHATSAPP_ACCESS_TOKEN` ou `TWILIO_*` manquent.
 

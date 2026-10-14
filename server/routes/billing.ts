@@ -4,15 +4,17 @@ import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { getDb } from "@/db";
 import {
+  authUsers,
   subscriptionEvents,
   subscriptionPaymentInstructions,
   subscriptionPaymentRequests,
   subscriptionPlans,
   subscriptions,
 } from "@/db/schema";
+import { BILLING_POLICY_VERSION } from "@/lib/billing-policy";
 import { requireActor, requireRole } from "@/server/lib/auth-context";
 import { generatePaymentReference, priceForPlan, resolveAccess } from "@/server/lib/billing";
-import { notifyAgency } from "@/server/lib/subscription-access";
+import { notifyAgency, notifyPlatformAdmins } from "@/server/lib/subscription-access";
 import { parseBody, parseUuid } from "@/server/lib/http";
 import type { ApiEnv } from "@/server/session-middleware";
 
@@ -108,6 +110,18 @@ router.post("/billing/requests", async (c) => {
   const body = await parseBody(c, createRequestInput);
   const db = getDb();
 
+  // Policy acceptance is a prerequisite for paying (covers OAuth signups
+  // that bypass the registration checkbox; see POST /account/policy).
+  const session = c.get("session");
+  const [policy] = await db
+    .select({ version: authUsers.policyVersion })
+    .from(authUsers)
+    .where(eq(authUsers.id, session!.user.id))
+    .limit(1);
+  if (policy?.version !== BILLING_POLICY_VERSION) {
+    throw new HTTPException(403, { message: "Veuillez d’abord accepter la politique de facturation." });
+  }
+
   const [plan] = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, body.planId)).limit(1);
   if (!plan || !plan.isActive) throw new HTTPException(400, { message: "Formule invalide." });
   const expected = priceForPlan(plan, body.billingInterval);
@@ -161,6 +175,12 @@ router.post("/billing/requests", async (c) => {
         requestId: request!.id,
         kind: "created",
         payload: { reference, expectedAmountXof: expected, interval: body.billingInterval, method: body.method },
+      });
+      await notifyPlatformAdmins(db, {
+        type: "billing_request_created",
+        title: "Nouvelle demande de paiement",
+        body: `${reference} — ${expected.toLocaleString("fr-FR")} XOF (${body.billingInterval}).`,
+        href: "/admin/facturation",
       });
       return c.json({ data: request }, 201);
     } catch (error) {
@@ -257,7 +277,13 @@ router.post("/billing/requests/:id/notify", async (c) => {
     type: "billing_request_submitted",
     title: "Demande de paiement envoyée",
     body: `Référence ${row.reference} — en attente de vérification par l'administrateur.`,
-    href: "/settings/abonnement",
+    href: "/billing/subscription",
+  });
+  await notifyPlatformAdmins(db, {
+    type: "billing_request_notified",
+    title: "Paiement à vérifier",
+    body: `${row.reference} — ${row.expectedAmountXof.toLocaleString("fr-FR")} XOF, ${updated!.method}.`,
+    href: "/admin/facturation",
   });
   return c.json({ data: updated });
 });
