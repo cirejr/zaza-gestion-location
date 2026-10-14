@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
 import { StatusBadge } from "@/components/dashboard/status-badge";
@@ -25,6 +25,11 @@ export function SubscriptionsPanel() {
   const [months, setMonths] = useState("1");
   const [plan, setPlan] = useState("monthly");
   const [working, setWorking] = useState(false);
+
+  useEffect(() => {
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function refresh() {
     setLoading(true);
@@ -84,10 +89,8 @@ export function SubscriptionsPanel() {
   if (!loaded) {
     return (
       <Card>
-        <CardContent className="py-6 text-sm">
-          <Button variant="outline" onClick={() => void refresh()} disabled={loading}>
-            {loading ? <Spinner data-icon="inline-start" /> : null}Charger les abonnements
-          </Button>
+        <CardContent className="py-6 text-sm text-muted-foreground">
+          {loading ? "Chargement des abonnements…" : "Aucun abonnement chargé."}
         </CardContent>
       </Card>
     );

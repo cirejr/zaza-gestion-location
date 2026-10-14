@@ -11,7 +11,7 @@ export function adminNavItems(pending: number): AdminNavItem[] {
     { label: "Vue d’ensemble", href: "/admin", icon: LayoutDashboard },
     { label: "Demandes", href: "/admin/demandes", icon: ClipboardList, badge: pending },
     { label: "Abonnements", href: "/admin/abonnements", icon: CreditCard },
-    { label: "Formules", href: "/admin/formules", icon: Tags },
+    { label: "Tarifs & paiements", href: "/admin/tarifs", icon: Tags },
   ];
 }
 

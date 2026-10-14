@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,11 @@ export function CatalogPanel() {
   const [phone, setPhone] = useState("");
   const [text, setText] = useState("");
   const [working, setWorking] = useState(false);
+
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function load() {
     try {
@@ -77,8 +82,8 @@ export function CatalogPanel() {
   if (!loaded) {
     return (
       <Card>
-        <CardContent className="py-6 text-sm">
-          <Button variant="outline" onClick={() => void load()}>Charger formules & instructions</Button>
+        <CardContent className="py-6 text-sm text-muted-foreground">
+          Chargement du catalogue…
         </CardContent>
       </Card>
     );
@@ -88,7 +93,7 @@ export function CatalogPanel() {
     <div className="flex flex-col gap-4">
       <Card>
         <CardHeader>
-          <CardTitle>Formules ({plans.length})</CardTitle>
+          <CardTitle>Formules tarifaires ({plans.length})</CardTitle>
           <p className="text-sm text-muted-foreground">Les prix affichés aux agences viennent d’ici — jamais du code.</p>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">

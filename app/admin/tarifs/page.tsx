@@ -13,8 +13,8 @@ export default async function AdminCatalogPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-bold">Formules & instructions</h1>
-        <p className="text-sm text-muted-foreground">Catalogue facturé aux agences et consignes de paiement affichées.</p>
+        <h1 className="text-2xl font-bold">Tarifs & paiements</h1>
+        <p className="text-sm text-muted-foreground">Les formules vendues aux agences et les instructions de paiement (numéros Wave, Orange Money, espèces) qu’elles voient.</p>
       </div>
       <CatalogPanel />
     </div>
