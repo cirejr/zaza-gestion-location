@@ -67,7 +67,7 @@ const instructionInput = z.object({
 router.get("/admin/billing/overview", async (c) => {
   await requirePlatformAdmin(c);
   const db = getDb();
-  const [[active], [pending], [expired], [closures], recent] = await Promise.all([
+  const [[active], [pending], [expired], [closures], [awaiting], recent] = await Promise.all([
     db.select({ total: count() }).from(subscriptions).where(eq(subscriptions.status, "active")),
     db
       .select({ total: count() })
@@ -75,6 +75,12 @@ router.get("/admin/billing/overview", async (c) => {
       .where(eq(subscriptionPaymentRequests.status, "notified")),
     db.select({ total: count() }).from(subscriptions).where(eq(subscriptions.status, "past_due")),
     db.select({ total: count() }).from(closureRequests).where(eq(closureRequests.status, "open")),
+    // Created but not yet signaled by the agency: no verification due yet,
+    // but visible incoming demand (otherwise the queue looks empty).
+    db
+      .select({ total: count() })
+      .from(subscriptionPaymentRequests)
+      .where(eq(subscriptionPaymentRequests.status, "pending")),
     db
       .select()
       .from(subscriptionPaymentRequests)
@@ -91,6 +97,7 @@ router.get("/admin/billing/overview", async (c) => {
     data: {
       active: Number(active?.total ?? 0),
       pending: Number(pending?.total ?? 0),
+      awaitingSignal: Number(awaiting?.total ?? 0),
       expired: Number(expired?.total ?? 0),
       openClosures: Number(closures?.total ?? 0),
       expiringCount: expiring.length,

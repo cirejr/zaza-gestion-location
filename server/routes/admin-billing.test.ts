@@ -50,8 +50,28 @@ beforeEach(() => {
   harness.updatedReqRows = [{ ...baseRequest, status: "confirmed" }];
 });
 
-describe("admin-only verification (§6, §7)", () => {
-  test("a non-platform-admin gets 403", async () => {
+describe("overview counts", () => {
+  test("surfaces signaled payments and created-but-unsignaled demand separately", async () => {
+    const { default: router } = await import("./admin-billing");
+    harness.selectQueue = [
+      [{ total: 2 }], // active subscriptions
+      [{ total: 3 }], // notified (to verify)
+      [{ total: 1 }], // past_due
+      [{ total: 0 }], // open closures
+      [{ total: 1 }], // pending (awaiting agency signal)
+      [], // recent confirmed
+      [], // expiring
+    ];
+    const response = await router.request("/admin/billing/overview");
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.data.pending).toBe(3);
+    expect(body.data.awaitingSignal).toBe(1);
+    expect(body.data.active).toBe(2);
+  });
+});
+
+describe("admin-only verification (§6, §7)", () => {  test("a non-platform-admin gets 403", async () => {
     harness.adminMode = "denied";
     const { default: router } = await import("./admin-billing");
     const response = await router.request("/admin/billing/overview");

@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic";
 type Overview = {
   active: number;
   pending: number;
+  awaitingSignal: number;
   expired: number;
   openClosures: number;
   expiringCount: number;
@@ -39,7 +40,15 @@ export default async function AdminOverviewPage() {
 
   const stats = [
     { label: "Abonnements actifs", value: overview?.active ?? 0, href: "/admin/abonnements" },
-    { label: "Paiements à vérifier", value: overview?.pending ?? 0, href: "/admin/demandes", highlight: (overview?.pending ?? 0) > 0 },
+    {
+      label: "Paiements à vérifier",
+      value: overview?.pending ?? 0,
+      href: "/admin/demandes",
+      highlight: (overview?.pending ?? 0) > 0,
+      sub: (overview?.awaitingSignal ?? 0) > 0
+        ? `+ ${overview!.awaitingSignal} créée(s), en attente de signalement`
+        : undefined,
+    },
     { label: "Expirés", value: overview?.expired ?? 0, href: "/admin/abonnements" },
     { label: "Expirent ≤ 7 jours", value: overview?.expiringCount ?? 0, href: "/admin/abonnements" },
     { label: "Fermetures ouvertes", value: overview?.openClosures ?? 0, href: "#fermetures" },
@@ -57,9 +66,14 @@ export default async function AdminOverviewPage() {
           <Link key={stat.label} href={stat.href}>
             <Card className={stat.highlight ? "border-primary" : undefined}>
               <CardHeader><CardTitle className="text-sm font-medium text-muted-foreground">{stat.label}</CardTitle></CardHeader>
-              <CardContent className="flex items-center justify-between">
-                <span className="text-3xl font-bold">{stat.value}</span>
-                <ArrowRight className="size-4 text-muted-foreground" />
+              <CardContent className="flex flex-col gap-1">
+                <span className="flex items-center justify-between">
+                  <span className="text-3xl font-bold">{stat.value}</span>
+                  <ArrowRight className="size-4 text-muted-foreground" />
+                </span>
+                {"sub" in stat && stat.sub && (
+                  <span className="text-xs text-muted-foreground">{stat.sub}</span>
+                )}
               </CardContent>
             </Card>
           </Link>
