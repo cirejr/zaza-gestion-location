@@ -180,7 +180,7 @@ router.post("/billing/requests", async (c) => {
         type: "billing_request_created",
         title: "Nouvelle demande de paiement",
         body: `${reference} — ${expected.toLocaleString("fr-FR")} XOF (${body.billingInterval}).`,
-        href: "/admin/facturation",
+        href: "/admin/demandes",
       });
       return c.json({ data: request }, 201);
     } catch (error) {
@@ -283,7 +283,7 @@ router.post("/billing/requests/:id/notify", async (c) => {
     type: "billing_request_notified",
     title: "Paiement à vérifier",
     body: `${row.reference} — ${row.expectedAmountXof.toLocaleString("fr-FR")} XOF, ${updated!.method}.`,
-    href: "/admin/facturation",
+    href: "/admin/demandes",
   });
   return c.json({ data: updated });
 });

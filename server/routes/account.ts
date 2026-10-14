@@ -107,7 +107,7 @@ router.post("/account/closure", async (c) => {
     type: "account_closure_requested",
     title: "Demande de fermeture de compte",
     body: `${actor.organizationId} : ${body.reason.trim().slice(0, 140)}`,
-    href: "/admin/facturation",
+    href: "/admin",
   });
   return c.json({ data: created }, 201);
 });
