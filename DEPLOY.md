@@ -45,6 +45,10 @@ Copier `.env.example` → `.env.local` puis remplir :
   consentement politique : `user.policy_version/policy_accepted_at`).
 - Promouvoir le propriétaire SaaS : `bun scripts/promote-admin.ts vous@domaine.com`
   (l'utilisateur doit s'être connecté une fois avant). Révocation : même commande avec `--revoke`.
+  Voie normale : renseignez `PLATFORM_ADMIN_EMAILS` (emails séparés par des virgules) —
+  tout compte inscrit ou connecté avec une adresse listée devient `admin` automatiquement,
+  sans CLI. C'est la SEULE voie d'accès au rôle : le formulaire n'a pas de champ rôle et
+  une inscription forgée avec `role: "admin"` retombe à `user` (vérifié).
 - Renseigner les numéros destinataires dans `/admin/facturation` (onglet Formules & instructions) —
   les seeds laissent `phone_number` vide.
 - Planifier l'expiration côté serveur (jamais de minuteur frontend), une fois par jour :

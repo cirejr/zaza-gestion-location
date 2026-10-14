@@ -2,6 +2,7 @@ import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { admin, organization, phoneNumber } from "better-auth/plugins";
+import { and, eq, ne } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   authAccounts,
@@ -32,6 +33,51 @@ export const PORTAL_EMAIL_DOMAIN = "portal.naya.app";
 /** True for the synthetic emails generated for portal (phone OTP) accounts. */
 export function isPortalEmail(email: string | null | undefined) {
   return Boolean(email?.toLowerCase().endsWith(`@${PORTAL_EMAIL_DOMAIN}`));
+}
+
+/**
+ * Platform-owner (SaaS admin) allowlist, from `PLATFORM_ADMIN_EMAILS`
+ * (comma-separated). These addresses — and only server configuration, never
+ * user input — can hold the `admin` role:
+ *
+ * - signing up (email, Google, or admin-created) with a listed address
+ *   promotes the account automatically;
+ * - an already-listed account is promoted on its next sign-in.
+ *
+ * There is deliberately no UI or signup field for this: `signUp.email`
+ * strips unknown fields (verified: a crafted `role: "admin"` signup lands
+ * as `user`), and the admin plugin defaults every other account to `user`.
+ */
+export function platformAdminEmails(): Set<string> {
+  return new Set(
+    (process.env.PLATFORM_ADMIN_EMAILS ?? "")
+      .split(",")
+      .map((entry) => entry.trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
+
+/** True when the address is designated platform admin by configuration. */
+export function shouldAutoPromote(email: string | null | undefined) {
+  if (!email || isPortalEmail(email)) return false;
+  return platformAdminEmails().has(email.toLowerCase());
+}
+
+/**
+ * Idempotent promotion for a whitelisted address. Direct drizzle update
+ * (bypasses auth hooks, so no recursion). Never throws: auth must keep
+ * working when the database is unreachable (UI preview) or misconfigured.
+ */
+async function ensureWhitelistedAdmin(userId: string, email: string | null | undefined) {
+  if (!shouldAutoPromote(email) || !process.env.DATABASE_URL) return;
+  try {
+    await getDb()
+      .update(authUsers)
+      .set({ role: "admin", updatedAt: new Date() })
+      .where(and(eq(authUsers.id, userId), ne(authUsers.role, "admin")));
+  } catch (error) {
+    console.error("Auto-promotion of platform admin failed", error);
+  }
 }
 
 type IdentityLike = { user: { email?: string | null | undefined } } | null | undefined;
@@ -101,6 +147,36 @@ export function createAuth() {
       google: {
         clientId: process.env.GOOGLE_CLIENT_ID ?? "google-client-not-configured",
         clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "google-secret-not-configured",
+      },
+    },
+    databaseHooks: {
+      user: {
+        create: {
+          // Default-admin bootstrap: a whitelisted address is admin from
+          // birth, whatever the signup path (email, Google, invitation).
+          after: async (user) => {
+            await ensureWhitelistedAdmin(user.id, user.email);
+          },
+        },
+      },
+      session: {
+        create: {
+          // Covers whitelisted accounts created before the allowlist existed:
+          // promotion happens on next sign-in, no CLI needed.
+          after: async (session) => {
+            try {
+              if (!process.env.DATABASE_URL) return;
+              const [row] = await getDb()
+                .select({ id: authUsers.id, email: authUsers.email })
+                .from(authUsers)
+                .where(eq(authUsers.id, session.userId))
+                .limit(1);
+              if (row) await ensureWhitelistedAdmin(row.id, row.email);
+            } catch (error) {
+              console.error("Auto-promotion of platform admin failed", error);
+            }
+          },
+        },
       },
     },
     plugins: [
