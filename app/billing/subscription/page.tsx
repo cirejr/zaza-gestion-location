@@ -1,8 +1,10 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { LockKeyhole } from "lucide-react";
 import { ManualBilling, type BillingInstruction, type BillingPlan, type PaymentRequest } from "@/components/billing/manual-billing";
 import { AccountActions, PolicyAcceptance } from "@/components/billing/account-actions";
 import { verifySession } from "@/lib/dal";
+import { getServerSession } from "@/lib/session";
 import { serverApiFetch } from "@/lib/server-api";
 import type { ApiUser } from "@/lib/dashboard-types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,10 +32,23 @@ export default async function BillingSubscriptionPage({
   searchParams: Promise<{ required?: string }>;
 }) {
   // Deliberately NOT getViewer: locked agencies must always reach this page.
+  // Pure platform admins have no agency actor: send them to their dashboard.
   await verifySession();
+  const session = await getServerSession();
+  let me: ApiUser;
+  try {
+    me = (await serverApiFetch<{ data: ApiUser }>("/api/users/me")).data;
+  } catch (error) {
+    if (
+      (error as { status?: unknown } | null)?.status === 403 &&
+      (session?.user as { role?: unknown } | undefined)?.role === "admin"
+    ) {
+      redirect("/admin/facturation");
+    }
+    throw error;
+  }
   const { required } = await searchParams;
-  const [me, current, plans, instructions, requests] = await Promise.all([
-    serverApiFetch<{ data: ApiUser }>("/api/users/me"),
+  const [current, plans, instructions, requests] = await Promise.all([
     serverApiFetch<{ data: SubscriptionPayload }>("/api/billing/subscription"),
     serverApiFetch<{ data: BillingPlan[] }>("/api/billing/plans"),
     serverApiFetch<{ data: BillingInstruction[] }>("/api/billing/instructions"),
@@ -41,7 +56,7 @@ export default async function BillingSubscriptionPage({
   ]);
 
   const locked = !current.data.access?.allowed;
-  const isOwner = me.data.role === "owner";
+  const isOwner = me.role === "owner";
 
   return (
     <div className="flex flex-col gap-6">
@@ -64,7 +79,7 @@ export default async function BillingSubscriptionPage({
         </Card>
       )}
 
-      <PolicyAcceptance acceptedVersion={me.data.policyVersion ?? null} />
+      <PolicyAcceptance acceptedVersion={me.policyVersion ?? null} />
 
       {locked && (
         <Card className="border-destructive/50">

@@ -5,6 +5,7 @@ import { getDb } from "@/db";
 import {
   apartments,
   authSessions,
+  authUsers,
   buildings,
   financialAccounts,
   financialTransactions,
@@ -17,6 +18,7 @@ import {
   type User,
 } from "@/db/schema";
 import { isPortalEmail } from "@/lib/auth";
+import { assertAgencyActorAllowed } from "@/server/lib/agency-policy";
 import { ensureOrganizationProfile } from "@/server/lib/organization";
 import type { RequestContext } from "@/server/lib/http";
 
@@ -96,6 +98,29 @@ export async function requireActor(c: RequestContext): Promise<AgencyActor> {
 
   const email = session.user.email.toLowerCase();
   const db = getDb();
+
+  // Platform admins (SaaS owner) are not agency owners: unless they already
+  // belong to an agency (domain row or membership — dual accounts), they must
+  // never be bootstrapped one. They work from /admin/facturation.
+  const [authRow] = await db
+    .select({ role: authUsers.role })
+    .from(authUsers)
+    .where(eq(authUsers.id, session.user.id))
+    .limit(1);
+  if (authRow?.role === "admin") {
+    const [domainRow] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
+    const [membershipRow] = await db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(eq(organizationMembers.userId, session.user.id))
+      .limit(1);
+    assertAgencyActorAllowed({
+      authRole: authRow.role,
+      hasDomainUser: Boolean(domainRow),
+      hasMembership: Boolean(membershipRow),
+    });
+  }
+
   let [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
 
   if (!user) {

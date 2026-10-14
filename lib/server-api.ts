@@ -24,12 +24,23 @@ export async function serverApiFetch<T>(path: string, init: RequestInit = {}): P
 
   const baseUrl = process.env.APP_URL ?? process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
   const response = await api.fetch(new Request(new URL(path, baseUrl), { ...init, headers }));
-  const json = await response.json();
+  // Hono error responses (thrown HTTPException) are plain text, not JSON:
+  // parsing blindly turns every 4xx/5xx into a SyntaxError and loses the
+  // real status, so server components can never branch on it.
+  const contentType = response.headers.get("content-type") ?? "";
+  const body: unknown = contentType.includes("application/json")
+    ? await response.json().catch(() => null)
+    : await response.text();
   if (!response.ok) {
-    const message = json.message && typeof json.message === "string" ? json.message : `API request failed (${response.status})`;
-    throw new ServerApiError(message, response.status, json);
+    const message =
+      typeof body === "object" && body && "message" in body && typeof (body as { message: unknown }).message === "string"
+        ? (body as { message: string }).message
+        : typeof body === "string" && body.trim() !== ""
+          ? body
+          : `API request failed (${response.status})`;
+    throw new ServerApiError(message, response.status, body);
   }
-  return json as T;
+  return body as T;
 }
 
 /** Same call, memoized per request with React `cache()`, so two `<Suspense>`

@@ -33,9 +33,23 @@ export const verifySession = cache(async () => {
 });
 
 export const getViewer = cache(async (): Promise<ApiUser> => {
-  await verifySession();
-  const response = await serverApiFetch<{ data: ApiUser }>("/api/users/me");
-  const user = response.data;
+  const session = await verifySession();
+  let user: ApiUser;
+  try {
+    user = (await serverApiFetch<{ data: ApiUser }>("/api/users/me")).data;
+  } catch (error) {
+    // Pure platform admins have no agency actor (`/api/users/me` 403s by
+    // design): they work from /admin/facturation, never onboarding/billing.
+    // Structural check (not instanceof): module duplication across RSC
+    // boundaries must never swallow this redirect.
+    if (
+      (error as { status?: unknown } | null)?.status === 403 &&
+      (session.user as { role?: unknown } | undefined)?.role === "admin"
+    ) {
+      redirect("/admin/facturation");
+    }
+    throw error;
+  }
   // Tenant-role accounts use the tenant portal instead of the dashboard.
   if (user.role === "tenant") redirect("/espace-locataire");
   // The agency owner must finish the first-run wizard before reaching the
